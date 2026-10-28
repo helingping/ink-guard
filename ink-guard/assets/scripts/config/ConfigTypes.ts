@@ -7,6 +7,8 @@ export interface LevelStat {
   atk: number;
   aspd: number;
   range: number;
+  /** Hit points. Foes damage deployed tokens; a merge refills this. */
+  hp: number;
 }
 
 export interface UnitTypeConfig {
@@ -33,6 +35,33 @@ export interface UnitsConfig {
   types: Record<string, UnitTypeConfig>;
 }
 
+/**
+ * A foe borrows delivery from a player token (`vfx`): style, motion, strike,
+ * shotSpeed, and level-1 range. Pose frames are its own glyph; fx frames are
+ * the linked token's.
+ */
+export interface FoeTypeConfig {
+  id: string;
+  displayName: string;
+  glyph: string;
+  ink: string;
+  style: AttackStyle;
+  motion: string;
+  styleLabel: string;
+  motionLabel: string;
+  strike: number;
+  shotSpeed: number;
+  range: number;
+  atk: number;
+  aspd: number;
+  vfx: string;
+}
+
+export interface FoesConfig {
+  order: string[];
+  types: Record<string, FoeTypeConfig>;
+}
+
 export interface EconomyConfig {
   startMantou: number;
   recruitCostBase: number;
@@ -54,6 +83,8 @@ export interface WaveDef {
   speed: number;
   damage: number;
   interval: number;
+  /** Foe ids, cycled as the wave spawns. Empty means the first melee foe. */
+  roster: string[];
 }
 
 export interface WavesConfig {
@@ -85,6 +116,7 @@ export interface BoardConfig {
 
 export interface GameConfig {
   units: UnitsConfig;
+  foes: FoesConfig;
   economy: EconomyConfig;
   adou: AdouConfig;
   waves: WavesConfig;
@@ -92,6 +124,6 @@ export interface GameConfig {
 }
 
 /** `resources.load` paths, without extension, under `assets/resources/`. */
-export const CONFIG_FILES = ['units', 'economy', 'adou', 'waves', 'board'] as const;
+export const CONFIG_FILES = ['units', 'foes', 'economy', 'adou', 'waves', 'board'] as const;
 
 export type ConfigFileName = (typeof CONFIG_FILES)[number];

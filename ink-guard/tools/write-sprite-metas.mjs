@@ -3,7 +3,7 @@
  * Run from the repo root: node ink-guard/tools/write-sprite-metas.mjs
  */
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(import.meta.dirname, '..');
@@ -117,15 +117,22 @@ function directoryMeta(rel) {
   };
 }
 
-const dirs = ['assets/resources/pose', 'assets/resources/fx'];
+const dirs = ['assets/resources/pose', 'assets/resources/fx', 'assets/resources/foes'];
 for (const dir of dirs) {
-  writeFileSync(join(root, `${dir}.meta`), `${JSON.stringify(directoryMeta(dir), null, 2)}\n`);
+  const dirMeta = join(root, `${dir}.meta`);
+  if (!existsSync(dirMeta)) {
+    writeFileSync(dirMeta, `${JSON.stringify(directoryMeta(dir), null, 2)}\n`);
+  }
   for (const name of readdirSync(join(root, dir))) {
     if (!name.endsWith('.png')) {
       continue;
     }
     const rel = `${dir}/${name}`;
-    writeFileSync(join(root, `${rel}.meta`), `${JSON.stringify(imageMeta(rel), null, 2)}\n`);
+    const metaPath = join(root, `${rel}.meta`);
+    if (existsSync(metaPath)) {
+      continue;
+    }
+    writeFileSync(metaPath, `${JSON.stringify(imageMeta(rel), null, 2)}\n`);
   }
 }
 console.log('sprite metas written');

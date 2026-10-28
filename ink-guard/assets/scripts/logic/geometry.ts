@@ -86,6 +86,51 @@ export function dropSlotAt(
   return { place: 'bench', slot: bench };
 }
 
+/** Inclusive Euclidean test. Combat and the range highlight both use this. */
+export function inRange(ax: number, ay: number, bx: number, by: number, range: number): boolean {
+  return Math.hypot(ax - bx, ay - by) <= range;
+}
+
+/** Grid slots whose centers lie inside a range circle. The slot under the origin is included. */
+export function slotsWithin(board: BoardConfig, x: number, y: number, range: number): number[] {
+  const count = board.gridCols * board.gridRows;
+  const slots: number[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const point = gridPosition(board, i);
+    if (inRange(x, y, point.x, point.y, range)) {
+      slots.push(i);
+    }
+  }
+  return slots;
+}
+
+/** Path samples inside a range circle, so the covered stretch of the road can be marked. */
+export function pathMarksWithin(
+  points: BoardPoint[],
+  x: number,
+  y: number,
+  range: number,
+  step = 28,
+): BoardPoint[] {
+  const path = buildPath(points);
+  const marks: BoardPoint[] = [];
+  if (path.total <= 0) {
+    const only = path.points[0];
+    if (only && inRange(x, y, only.x, only.y, range)) {
+      marks.push(only);
+    }
+    return marks;
+  }
+  const count = Math.max(1, Math.ceil(path.total / step));
+  for (let i = 0; i <= count; i += 1) {
+    const point = pointOnPath(path, (path.total * i) / count);
+    if (inRange(x, y, point.x, point.y, range)) {
+      marks.push(point);
+    }
+  }
+  return marks;
+}
+
 export function nearestIndex(
   board: BoardConfig,
   place: 'grid' | 'bench',

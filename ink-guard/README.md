@@ -16,6 +16,6 @@ Cocos Creator **3.8.8** 工程。请用 Creator 打开本目录，不要打开�
 
 `Overlay`、`Banner`、`Loading` 和每个格子的 `Mark` 默认未激活，方便在编辑器里看棋盘。勾上 `Overlay` 就能改胜负面板。
 
-字体在 `assets/resources/fonts/`：马善政用于标题，Noto Sans CJK SC Regular 用于 HUD。Label 使用这两份字体资源。切图在 `assets/resources/textures/`。概念原图在 `assets/concepts/`。
+字体在 `assets/resources/fonts/`：马善政用于标题，Noto Sans CJK SC Regular 用于 HUD。Label 使用这两份字体资源。切图在 `assets/resources/textures/`，攻击帧在 `pose/` 和 `fx/`，墨寇静止字在 `foes/`。概念原图在 `assets/concepts/`。
 
 玩法、数值和已知缺口写在上一级的 `README.md` 和 `design/mvp-gdd.md`。配置在 `assets/resources/configs/`，改完重新播放即可。格子位置以 `board.json` 为准，播放时脚本会把槽位再摆一次。
