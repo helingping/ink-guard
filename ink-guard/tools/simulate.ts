@@ -7,7 +7,7 @@ import type { GameConfig } from '../assets/scripts/config/ConfigTypes';
 import { normalizeConfig } from '../assets/scripts/config/validateConfig';
 import type { Token } from '../assets/scripts/logic/GameSim';
 import { GameSim } from '../assets/scripts/logic/GameSim';
-import { buildPath, gridPosition, pointOnPath } from '../assets/scripts/logic/geometry';
+import { benchPosition, buildPath, dropSlotAt, gridPosition, pointOnPath } from '../assets/scripts/logic/geometry';
 
 declare function require(name: string): {
   readFileSync(path: string, encoding: 'utf8'): string;
@@ -175,6 +175,33 @@ function ruleTests(raw: Record<string, unknown>): void {
   check(config.waves.waves.length === 5, 'five authored waves');
   const center = gridPosition(config.board, 2);
   check(Math.abs(center.x) < 0.001, 'middle column is centered');
+  const inset = config.board.cellSize / 2 - 1;
+  const gridCount = config.board.gridCols * config.board.gridRows;
+  let slotsOk = true;
+  for (let i = 0; i < gridCount; i += 1) {
+    const p = gridPosition(config.board, i);
+    const corners = [
+      dropSlotAt(config.board, p.x, p.y),
+      dropSlotAt(config.board, p.x + inset, p.y + inset),
+      dropSlotAt(config.board, p.x - inset, p.y - inset),
+    ];
+    if (corners.some((slot) => !slot || slot.place !== 'grid' || slot.slot !== i)) {
+      slotsOk = false;
+    }
+  }
+  for (let i = 0; i < config.board.benchSlots; i += 1) {
+    const p = benchPosition(config.board, i);
+    const corners = [
+      dropSlotAt(config.board, p.x, p.y),
+      dropSlotAt(config.board, p.x + inset, p.y),
+      dropSlotAt(config.board, p.x - inset, p.y),
+    ];
+    if (corners.some((slot) => !slot || slot.place !== 'bench' || slot.slot !== i)) {
+      slotsOk = false;
+    }
+  }
+  check(slotsOk, 'releasing on a cell center or corner selects that cell');
+  check(dropSlotAt(config.board, 0, 480) === null, 'a point in the HUD is not a slot');
 
   const costs = new GameSim(config, 1);
   const first = costs.nextCost();

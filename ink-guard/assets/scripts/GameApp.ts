@@ -4,13 +4,10 @@ import {
   Canvas,
   Color,
   Component,
-  EventMouse,
   EventTouch,
   Font,
   Graphics,
   HorizontalTextAlignment,
-  Input,
-  input,
   Label,
   Node,
   Overflow,
@@ -26,7 +23,7 @@ import {
 } from 'cc';
 import { loadGameConfig } from './config/ConfigService';
 import type { GameConfig } from './config/ConfigTypes';
-import { nearestIndex } from './logic/geometry';
+import { dropSlotAt } from './logic/geometry';
 import { GameSim, tokenPosition, type DropResult, type Place, type Token } from './logic/GameSim';
 import { Ink, RANK, inkColor, paintRange } from './view/InkWidgets';
 
@@ -188,7 +185,6 @@ export class GameApp extends Component {
   private clock = 0;
   private toast = '';
   private toastTimer = 0;
-  private inputBound = false;
   private shownHp = -1;
   private recruitEnabled = true;
   private overlayPhase = 'playing';
@@ -207,10 +203,6 @@ export class GameApp extends Component {
       this.loadingLabel.string = '研墨中…';
     }
     void this.boot();
-  }
-
-  onDestroy(): void {
-    this.unbindInput();
   }
 
   update(dt: number): void {
@@ -311,7 +303,6 @@ export class GameApp extends Component {
     } else if (this.tutorialNode) {
       this.tutorialNode.active = false;
     }
-    this.bindInput();
     this.syncAll();
     console.log(`[InkGuard] ready, waves=${config.waves.waves.length}, adou=${config.adou.maxHp}`);
   }
@@ -385,6 +376,8 @@ export class GameApp extends Component {
       return;
     }
     node.active = false;
+    // Mark has no pointer listener, so Creator's UI dispatcher never hit-tests it.
+    // The ring cannot swallow the drag that the token already claimed.
     this.slotMarks.push({ place, slot, node, sprite });
   }
 
@@ -413,30 +406,6 @@ export class GameApp extends Component {
     }
   }
 
-  private bindInput(): void {
-    if (this.inputBound) {
-      return;
-    }
-    this.inputBound = true;
-    input.on(Input.EventType.TOUCH_MOVE, this.onPointerMove, this);
-    input.on(Input.EventType.TOUCH_END, this.onPointerEnd, this);
-    input.on(Input.EventType.TOUCH_CANCEL, this.onPointerEnd, this);
-    input.on(Input.EventType.MOUSE_MOVE, this.onPointerMove, this);
-    input.on(Input.EventType.MOUSE_UP, this.onPointerEnd, this);
-  }
-
-  private unbindInput(): void {
-    if (!this.inputBound) {
-      return;
-    }
-    this.inputBound = false;
-    input.off(Input.EventType.TOUCH_MOVE, this.onPointerMove, this);
-    input.off(Input.EventType.TOUCH_END, this.onPointerEnd, this);
-    input.off(Input.EventType.TOUCH_CANCEL, this.onPointerEnd, this);
-    input.off(Input.EventType.MOUSE_MOVE, this.onPointerMove, this);
-    input.off(Input.EventType.MOUSE_UP, this.onPointerEnd, this);
-  }
-
   private claimUi(): boolean {
     const now = Date.now();
     if (this.pointerDown || now < this.uiLockUntil || now - this.lastUiClaim < 140) {
@@ -457,7 +426,7 @@ export class GameApp extends Component {
     }
     this.pointerDown = true;
     this.dragId = id;
-    this.dragTouch = typeof event.getID === 'function' ? event.getID() : -1;
+    this.dragTouch = this.pointerId(event);
     this.dragPos = this.readPointer(event);
     viewToken.root.setScale(1.08, 1.08, 1);
     viewToken.root.setSiblingIndex(999);
@@ -473,7 +442,7 @@ export class GameApp extends Component {
     if (!this.pointerDown || !this.dragId) {
       return;
     }
-    const id = typeof event.getID === 'function' ? event.getID() : -1;
+    const id = this.pointerId(event);
     if (this.dragTouch !== -1 && id !== -1 && id !== this.dragTouch) {
       return;
     }
@@ -490,7 +459,7 @@ export class GameApp extends Component {
     if (!this.pointerDown || !this.dragId) {
       return;
     }
-    const id = typeof event.getID === 'function' ? event.getID() : -1;
+    const id = this.pointerId(event);
     if (this.dragTouch !== -1 && id !== -1 && id !== this.dragTouch) {
       return;
     }
@@ -554,31 +523,21 @@ export class GameApp extends Component {
     if (!this.sim || !this.config) {
       return { ok: true, action: 'stay' };
     }
-    let best: Token | null = null;
-    let bestD = 52;
-    for (const token of this.sim.tokens) {
-      if (token.id === id) {
-        continue;
-      }
-      const pos = tokenPosition(this.config, token);
-      const distance = Math.hypot(pos.x - x, pos.y - y);
-      if (distance <= bestD) {
-        bestD = distance;
-        best = token;
-      }
+    // Slots own their cells. drop() merges or swaps when the chosen slot is taken,
+    // so the pointer only has to land inside the slot, not on the other token.
+    const slot = dropSlotAt(this.config.board, x, y);
+    if (!slot) {
+      return { ok: true, action: 'stay' };
     }
-    if (best) {
-      return this.sim.drop(id, best.place, best.slot);
+    return this.sim.drop(id, slot.place, slot.slot);
+  }
+
+  private pointerId(event: PointerEvent): number {
+    if (typeof event.getID !== 'function') {
+      return -1;
     }
-    const grid = nearestIndex(this.config.board, 'grid', x, y, 58);
-    if (grid >= 0) {
-      return this.sim.drop(id, 'grid', grid);
-    }
-    const bench = nearestIndex(this.config.board, 'bench', x, y, 46);
-    if (bench >= 0) {
-      return this.sim.drop(id, 'bench', bench);
-    }
-    return { ok: true, action: 'stay' };
+    const id = event.getID();
+    return typeof id === 'number' ? id : -1;
   }
 
   private readPointer(event: PointerEvent): { x: number; y: number } {
@@ -650,8 +609,18 @@ export class GameApp extends Component {
     }
     const rank = this.addText(root, `${RANK[token.level] ?? token.level}品`, 18, inkColor(Ink.brown), this.bodyFont, 88, 28);
     rank.node.setPosition(0, -46, 0);
-    root.on(Node.EventType.TOUCH_START, (event: EventTouch) => this.beginDrag(token.id, event), this);
-    root.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => this.beginDrag(token.id, event), this);
+    // Creator 3.8 turns a mouse press into a touch and the node that receives
+    // TOUCH_START claims that id. Later move/up events are delivered here and
+    // swallowed before global input listeners, including when the cursor has
+    // left this rect (the engine then renames the end to TOUCH_CANCEL).
+    // Listening on the node is what lets a mouse release land on a Cell.
+    const onStart = (event: EventTouch) => this.beginDrag(token.id, event);
+    const onMove = (event: EventTouch) => this.onPointerMove(event);
+    const onEnd = (event: EventTouch) => this.onPointerEnd(event);
+    root.on(Node.EventType.TOUCH_START, onStart, this);
+    root.on(Node.EventType.TOUCH_MOVE, onMove, this);
+    root.on(Node.EventType.TOUCH_END, onEnd, this);
+    root.on(Node.EventType.TOUCH_CANCEL, onEnd, this);
     return { id: token.id, root, rank, shownLevel: token.level };
   }
 
