@@ -7,11 +7,11 @@
 
 Cocos Creator 的场景和 web-mobile 出包都要编辑器。没有 Creator 时，用 `web-preview/` 里的 Canvas 竖屏页，手机浏览器就能玩。招募、合成、上阵、守波的数值读 `ink-guard/assets/resources/configs/`（旁边的 `web-preview/configs/` 是同一份拷贝，父路径读不到时才用）。
 
-手机现在就能打开（页面按真正的网页返回，不是源码）：
+手机现在就能打开（`text/html`，不是源码）。这个地址钉在已经验证可玩的提交上，避免预览缓存还停在旧页面：
 
-https://html-preview.github.io/?url=https://github.com/helingping/ink-guard/blob/cursor/h5-web-preview-232e/web-preview/index.html
+https://html-preview.github.io/?url=https://github.com/helingping/ink-guard/blob/710272e279f1687928138ed1a008a9458689c1f7/web-preview/index.html
 
-合并进 `main` 之后，把地址里的 `cursor/h5-web-preview-232e` 换成 `main`。
+合并进 `main` 之后，把地址里的提交号换成 `main`。
 
 GitHub Pages 需要仓库管理员点一次才会有 `github.io` 地址，见下面。打开之后是：
 
