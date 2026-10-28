@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#f3e6c8" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>墨卫 Ink Guard</title>
+    <link rel="icon" href="./favicon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="stage" id="stage">
+      <canvas id="board" width="720" height="1280" aria-label="墨卫棋盘"></canvas>
+      <header class="hud">
+        <h1 class="title" id="title">墨卫</h1>
+        <button class="speed" id="speed" type="button">常速</button>
+        <p class="wave" id="wave">第 1 / 5 波</p>
+        <p class="kinds" id="kinds"><b>寇</b> 近战 · <b>矛</b> 近战 · <b class="ranged">矢</b> 远程</p>
+        <div class="hp" aria-hidden="true">
+          <span id="hp-fill"></span>
+          <strong id="hp-text">阿斗 24/24</strong>
+        </div>
+        <p class="mantou" id="mantou">馒头 140</p>
+        <button class="recruit" id="recruit" type="button">招募 15</button>
+        <p class="hint" id="hint"></p>
+      </header>
+      <p class="banner" id="banner" hidden>第 1 波</p>
+      <section class="tutorial" id="tutorial" hidden>
+        <p>开局有两枚「刀」。拖到一起就升品。<br />金色合成，青色换位，绿色空位。</p>
+        <button class="ghost" id="tutorial-ok" type="button">知道了</button>
+      </section>
+      <section class="overlay" id="overlay" hidden>
+        <article>
+          <h2 id="overlay-title">墨阵已稳</h2>
+          <p id="overlay-body"></p>
+          <button class="restart" id="restart" type="button">再守一阵</button>
+        </article>
+      </section>
+      <section class="loading" id="loading">
+        <p id="loading-text">研墨中…</p>
+      </section>
+    </main>
+    <script type="module" src="./main.mjs"></script>
+  </body>
+</html>

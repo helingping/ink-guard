@@ -1,0 +1,316 @@
+@font-face {
+  font-family: "Ink Title";
+  src: url("./fonts/ink-title.woff2") format("woff2");
+  font-display: swap;
+}
+
+:root {
+  --stage-w: min(100vw, calc(100vh * 720 / 1280));
+  --stage-w: min(100vw, calc(100dvh * 720 / 1280));
+  --u: calc(var(--stage-w) / 720);
+  --ink: #1d2b38;
+  --cinnabar: #b4332a;
+  --paper: #f3e6c8;
+  --brown: #4a3728;
+  --gold: #c6a15a;
+  color: var(--ink);
+  font-family: "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #14110e;
+  overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: none;
+  user-select: none;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+}
+
+.stage {
+  position: relative;
+  width: var(--stage-w);
+  height: calc(var(--stage-w) * 1280 / 720);
+  background: var(--paper);
+  box-shadow: 0 0 0 1px rgba(74, 55, 40, 0.25), 0 18px 50px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+#board {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+.hud,
+.banner,
+.tutorial,
+.overlay,
+.loading {
+  position: absolute;
+  z-index: 2;
+}
+
+.hud {
+  inset: 0;
+}
+
+.hud,
+.banner {
+  pointer-events: none;
+}
+
+.hud * {
+  pointer-events: none;
+}
+
+.hud::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: calc(var(--u) * 268);
+  background: linear-gradient(to bottom, rgba(247, 239, 216, 0.72), rgba(247, 239, 216, 0));
+}
+
+.title {
+  position: absolute;
+  top: calc(var(--u) * 16);
+  left: calc(var(--u) * 28);
+  margin: 0;
+  font-family: "Ink Title", "Songti SC", "STKaiti", serif;
+  font-size: calc(var(--u) * 44);
+  font-weight: 400;
+  letter-spacing: calc(var(--u) * 4);
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(247, 241, 228, 0.9);
+}
+
+.speed,
+.recruit,
+.ghost,
+.restart {
+  pointer-events: auto;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.speed {
+  position: absolute;
+  top: calc(var(--u) * 18);
+  right: calc(var(--u) * 20);
+  min-width: calc(var(--u) * 108);
+  height: calc(var(--u) * 52);
+  border-radius: 999px;
+  background: rgba(29, 43, 56, 0.88);
+  color: #f7f1e4;
+  font-size: calc(var(--u) * 22);
+}
+
+.wave,
+.kinds,
+.mantou,
+.hint {
+  position: absolute;
+  margin: 0;
+  left: calc(var(--u) * 28);
+  right: calc(var(--u) * 28);
+}
+
+.wave {
+  top: calc(var(--u) * 70);
+  font-size: calc(var(--u) * 22);
+  color: var(--brown);
+  text-shadow: 0 1px 0 rgba(247, 241, 228, 0.85);
+}
+
+.kinds {
+  top: calc(var(--u) * 100);
+  font-size: calc(var(--u) * 18);
+  letter-spacing: calc(var(--u) * 1);
+  color: var(--brown);
+  text-shadow: 0 1px 0 rgba(247, 241, 228, 0.85);
+}
+
+.kinds b {
+  font-family: "Ink Title", "Songti SC", "STKaiti", serif;
+  font-size: calc(var(--u) * 22);
+  font-weight: 400;
+}
+
+.ranged {
+  color: var(--cinnabar);
+}
+
+.hp {
+  position: absolute;
+  top: calc(var(--u) * 132);
+  left: calc(var(--u) * 28);
+  right: calc(var(--u) * 28);
+  height: calc(var(--u) * 28);
+  border-radius: 999px;
+  background: rgba(255, 250, 240, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(74, 55, 40, 0.28);
+  overflow: hidden;
+}
+
+.hp span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #8d2e2a, #d45545);
+}
+
+#hp-text {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: calc(var(--u) * 16);
+  color: var(--ink);
+}
+
+.mantou {
+  top: calc(var(--u) * 176);
+  right: auto;
+  width: calc(var(--u) * 300);
+  font-size: calc(var(--u) * 22);
+  line-height: calc(var(--u) * 64);
+  text-shadow: 0 1px 0 rgba(247, 241, 228, 0.85);
+}
+
+.recruit {
+  position: absolute;
+  top: calc(var(--u) * 176);
+  right: calc(var(--u) * 20);
+  width: calc(var(--u) * 210);
+  height: calc(var(--u) * 64);
+  border-radius: 999px;
+  background: var(--cinnabar);
+  color: #f7f1e4;
+  font-size: calc(var(--u) * 26);
+  box-shadow: inset 0 0 0 2px rgba(90, 24, 20, 0.35);
+}
+
+.recruit.is-muted {
+  background: #8d8172;
+}
+
+.hint {
+  top: auto;
+  bottom: calc(var(--u) * 16);
+  text-align: center;
+  font-size: calc(var(--u) * 17);
+  line-height: 1.35;
+  color: var(--brown);
+}
+
+.hint.is-alert {
+  color: var(--cinnabar);
+}
+
+.banner {
+  top: calc(var(--u) * 430);
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  pointer-events: none;
+  font-family: "Ink Title", "Songti SC", "STKaiti", serif;
+  font-size: calc(var(--u) * 64);
+  color: var(--ink);
+  text-shadow: 0 2px 0 rgba(243, 230, 200, 0.8);
+}
+
+.tutorial,
+.overlay,
+.loading {
+  display: grid;
+  place-items: center;
+}
+
+.tutorial {
+  top: calc(var(--u) * 820);
+  left: calc(var(--u) * 36);
+  right: calc(var(--u) * 36);
+  min-height: calc(var(--u) * 112);
+  padding: calc(var(--u) * 12) calc(var(--u) * 16);
+  grid-template-columns: 1fr auto;
+  gap: calc(var(--u) * 12);
+  align-items: center;
+  background: rgba(247, 241, 228, 0.94);
+  border: 1px solid rgba(74, 55, 40, 0.28);
+  border-radius: calc(var(--u) * 16);
+  box-shadow: 0 8px 24px rgba(74, 55, 40, 0.12);
+}
+
+.tutorial p,
+.overlay p {
+  margin: 0;
+  font-size: calc(var(--u) * 18);
+  line-height: 1.45;
+  color: var(--brown);
+}
+
+.ghost,
+.restart {
+  height: calc(var(--u) * 48);
+  padding: 0 calc(var(--u) * 16);
+  border-radius: 999px;
+  background: var(--cinnabar);
+  color: #f7f1e4;
+  font-size: calc(var(--u) * 18);
+}
+
+.overlay,
+.loading {
+  inset: 0;
+  background: rgba(20, 17, 14, 0.46);
+}
+
+.overlay article,
+.loading p {
+  width: min(78%, calc(var(--u) * 520));
+  padding: calc(var(--u) * 28) calc(var(--u) * 24);
+  background: #f7f1e4;
+  border-radius: calc(var(--u) * 18);
+  text-align: center;
+}
+
+.overlay h2,
+.loading p {
+  margin: 0 0 calc(var(--u) * 12);
+  font-family: "Ink Title", "Songti SC", "STKaiti", serif;
+  font-size: calc(var(--u) * 40);
+  font-weight: 400;
+}
+
+.loading p {
+  white-space: pre-wrap;
+  color: var(--brown);
+}
+
+.overlay .restart {
+  margin-top: calc(var(--u) * 18);
+}
+
+[hidden] {
+  display: none !important;
+}

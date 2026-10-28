@@ -3,6 +3,45 @@
 
 竖屏单机。花馒头招募「刀 / 枪 / 弓 / 骑」，把相同字令叠成品级 +1，再拖上阵守阿斗。清完五波墨寇即胜，阿斗气血归零即败。
 
+## 手机上直接玩
+
+Cocos Creator 的场景和 web-mobile 出包都要编辑器。没有 Creator 时，用 `web-preview/` 里的 Canvas 竖屏页，手机浏览器就能玩。招募、合成、上阵、守波的数值读 `ink-guard/assets/resources/configs/`（旁边的 `web-preview/configs/` 是同一份拷贝，父路径读不到时才用）。
+
+公开地址（GitHub Pages 发布仓库根目录）：
+
+- https://helingping.github.io/ink-guard/
+- https://helingping.github.io/ink-guard/web-preview/
+
+设计分辨率 720×1280，页面会按手机宽度缩进竖屏。刀、枪、骑是近战（斩、刺、冲，挥到才命中），弓是远程（射，箭飞到才命中）。来敌三种墨印：**寇**、**矛**走近战，沿河道走到「斗」印才扣血；**矢**是远程，在尽头前停步射一箭，伤害仍是这一波的 `damage`，只扣一次。右上角可在常速和三倍之间切换。
+
+### 打开 GitHub Pages
+
+仓库是公开的。`.github/workflows/pages.yml` 用 GitHub Actions 发布整仓，入口是根目录的 `index.html`，它会跳到 `web-preview/`。仓库根上有 `.nojekyll`，避免 Jekyll 改写静态文件。
+
+还没开过 Pages 时：
+
+```bash
+gh api --method POST repos/helingping/ink-guard/pages -f build_type=workflow
+```
+
+已经从某个分支发布、要改成 Actions 时：
+
+```bash
+gh api --method PUT repos/helingping/ink-guard/pages -f build_type=workflow
+```
+
+本地查看要在仓库根目录起服务。`file://` 读不了 JSON。
+
+```bash
+python3 -m http.server 8765
+```
+
+浏览器打开 http://127.0.0.1:8765/web-preview/ 。不画画面、只复核规则：
+
+```bash
+node web-preview/self-check.mjs
+```
+
 ## 目录
 
 | 路径 | 内容 |
@@ -11,6 +50,7 @@
 | `assets/concepts/` | 英文文件名的概念图，只供看，不进运行时 |
 | `assets/README.md` | 资源命名约定 |
 | `ink-guard/` | Cocos Creator 3.8 工程 |
+| `web-preview/` | 不依赖 Creator 的手机浏览器预览 |
 
 调数值只改 `ink-guard/assets/resources/configs/` 里的 JSON。Creator 只能动态加载 `resources` 目录，所以配置放在这里，而不是 `assets/configs/`。
 
