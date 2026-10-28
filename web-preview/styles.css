@@ -1,6 +1,7 @@
 @font-face {
   font-family: "Ink Title";
-  src: url("./fonts/ink-title.woff2") format("woff2");
+  src: url("./fonts/ink-title.woff2") format("woff2"),
+    url("https://cdn.jsdelivr.net/gh/helingping/ink-guard@cursor/h5-web-preview-232e/web-preview/fonts/ink-title.woff2") format("woff2");
   font-display: swap;
 }
 

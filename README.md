@@ -7,13 +7,13 @@
 
 Cocos Creator 的场景和 web-mobile 出包都要编辑器。没有 Creator 时，用 `web-preview/` 里的 Canvas 竖屏页，手机浏览器就能玩。招募、合成、上阵、守波的数值读 `ink-guard/assets/resources/configs/`（旁边的 `web-preview/configs/` 是同一份拷贝，父路径读不到时才用）。
 
-现在就能用手机打开（第一次会先出现 raw.githack 的 “Open the page”，点一下进游戏）：
+手机现在就能打开（页面按真正的网页返回，不是源码）：
 
-https://raw.githack.com/helingping/ink-guard/cursor/h5-web-preview-232e/web-preview/
+https://html-preview.github.io/?url=https://github.com/helingping/ink-guard/blob/cursor/h5-web-preview-232e/web-preview/index.html
 
-合并进 `main` 之后，把地址里的分支名换成 `main`。
+合并进 `main` 之后，把地址里的 `cursor/h5-web-preview-232e` 换成 `main`。
 
-GitHub Pages 打开之后，地址是：
+GitHub Pages 需要仓库管理员点一次才会有 `github.io` 地址，见下面。打开之后是：
 
 - https://helingping.github.io/ink-guard/
 - https://helingping.github.io/ink-guard/web-preview/
@@ -24,17 +24,15 @@ GitHub Pages 打开之后，地址是：
 
 仓库是公开的。`.github/workflows/pages.yml` 用 GitHub Actions 发布整仓，入口是根目录的 `index.html`，它会跳到 `web-preview/`。仓库根上有 `.nojekyll`，避免 Jekyll 改写静态文件。
 
-本仓库的 Actions 令牌没有创建 Pages 站点的权限（接口返回 403）。需要仓库管理员打开一次。还没开过 Pages 时：
+创建 Pages 的接口返回 403（当前令牌不能替你打开站点）。管理员用浏览器点一次即可，大约一分钟后生效。
 
-```bash
-gh api --method POST repos/helingping/ink-guard/pages -f build_type=workflow
-```
+1. 打开 https://github.com/helingping/ink-guard/settings/pages （手机登录 GitHub 后也能点）。
+2. **Build and deployment** 里，Source 选 **Deploy from a branch**。
+3. Branch 选 **`cursor/h5-web-preview-232e`**，Folder 选 **`/ (root)`**，点 **Save**。
+4. 等状态变成 Ready，打开 https://helingping.github.io/ink-guard/web-preview/ 。
+5. 这个 PR 合并进 `main` 之后，回到同一页把 Branch 改成 **`main`**，再 Save。否则预览分支删掉后地址会断。
 
-已经从某个分支发布、要改成 Actions 时：
-
-```bash
-gh api --method PUT repos/helingping/ink-guard/pages -f build_type=workflow
-```
+不想选分支、想用已经写好的 Actions 工作流时：Source 改成 **GitHub Actions**。`.github/workflows/pages.yml` 会在推到 `main` 或当前预览分支时发布。站点一旦打开，工作流里的 `enablement` 才不会再被 403 挡住。
 
 本地查看要在仓库根目录起服务。`file://` 读不了 JSON。
 

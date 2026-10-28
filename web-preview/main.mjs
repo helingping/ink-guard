@@ -14,8 +14,37 @@ const HINT = '招募字令，拖上阵。相同字令叠在一起升品，不同
 const GUIDE_HINT = '把两枚「刀」叠在一起。拖动时金色可合成，青色可换位，绿色是空位。';
 const RANK = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
 const MARK = { move: '#2f6b4f', merge: '#c6a15a', swap: '#3d6f8a' };
-const ASSET_ROOT = new URL('../ink-guard/assets/resources/', import.meta.url);
+const SCRIPT_SRC = document.currentScript?.src || '';
+const CDN_REFS = ['cursor/h5-web-preview-232e', 'main'];
 const CONFIG_FILES = ['units', 'economy', 'adou', 'waves', 'board'];
+
+function cdn(ref, path) {
+  return `https://cdn.jsdelivr.net/gh/helingping/ink-guard@${ref}/${path}`;
+}
+
+function resourceBases() {
+  const bases = [];
+  if (SCRIPT_SRC) {
+    bases.push(new URL('../ink-guard/assets/resources/', SCRIPT_SRC).href);
+  }
+  for (const ref of CDN_REFS) {
+    bases.push(cdn(ref, 'ink-guard/assets/resources/'));
+  }
+  return bases;
+}
+
+function configBases() {
+  const bases = [];
+  if (SCRIPT_SRC) {
+    bases.push(new URL('../ink-guard/assets/resources/configs/', SCRIPT_SRC).href);
+    bases.push(new URL('./configs/', SCRIPT_SRC).href);
+  }
+  for (const ref of CDN_REFS) {
+    bases.push(cdn(ref, 'ink-guard/assets/resources/configs/'));
+    bases.push(cdn(ref, 'web-preview/configs/'));
+  }
+  return bases;
+}
 
 const stage = document.querySelector('#stage');
 const canvas = document.querySelector('#board');
@@ -102,18 +131,14 @@ function showToast(message) {
 async function fetchJson(url) {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`missing ${url.pathname}`);
+    throw new Error(`missing ${url}`);
   }
   return response.json();
 }
 
 async function loadConfig() {
-  const bases = [
-    new URL('../ink-guard/assets/resources/configs/', import.meta.url),
-    new URL('./configs/', import.meta.url),
-  ];
   let lastError = null;
-  for (const base of bases) {
+  for (const base of configBases()) {
     try {
       const raw = {};
       for (const name of CONFIG_FILES) {
@@ -129,15 +154,27 @@ async function loadConfig() {
       throw error;
     }
   }
+  if (globalThis.INK_GUARD_CONFIGS) {
+    return normalizeConfig(globalThis.INK_GUARD_CONFIGS);
+  }
   throw lastError ?? new Error('configs missing');
 }
 
 function loadImage(path) {
+  const bases = resourceBases();
   return new Promise((resolve) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => resolve(null);
-    image.src = new URL(path, ASSET_ROOT).href;
+    const tryNext = (index) => {
+      if (index >= bases.length) {
+        resolve(null);
+        return;
+      }
+      const image = new Image();
+      image.crossOrigin = 'anonymous';
+      image.onload = () => resolve(image);
+      image.onerror = () => tryNext(index + 1);
+      image.src = new URL(path, bases[index]).href;
+    };
+    tryNext(0);
   });
 }
 
