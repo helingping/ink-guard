@@ -43,8 +43,10 @@ export interface FloatText {
 }
 
 export type DropResult =
-  | { ok: true; action: 'move' | 'merge' | 'stay' }
+  | { ok: true; action: 'move' | 'merge' | 'stay' | 'swap' }
   | { ok: false; reason: 'mismatch' | 'max-level' };
+
+export type DropPreview = 'stay' | 'move' | 'merge' | 'swap' | 'blocked';
 
 export type RecruitResult =
   | { ok: true; token: Token }
@@ -160,18 +162,71 @@ export class GameSim {
       token.slot = slot;
       return { ok: true, action: 'move' };
     }
-    if (occupant.type !== token.type || occupant.level !== token.level) {
-      return { ok: false, reason: 'mismatch' };
+    if (occupant.type === token.type && occupant.level === token.level) {
+      if (token.level >= this.config.units.maxLevel) {
+        return { ok: false, reason: 'max-level' };
+      }
+      occupant.level += 1;
+      this.tokens = this.tokens.filter((entry) => entry.id !== token.id);
+      this.cooldown.delete(token.id);
+      this.cooldown.set(occupant.id, 0.15);
+      this.mergeCount += 1;
+      return { ok: true, action: 'merge' };
     }
-    if (token.level >= this.config.units.maxLevel) {
-      return { ok: false, reason: 'max-level' };
+    const fromPlace = token.place;
+    const fromSlot = token.slot;
+    token.place = occupant.place;
+    token.slot = occupant.slot;
+    occupant.place = fromPlace;
+    occupant.slot = fromSlot;
+    return { ok: true, action: 'swap' };
+  }
+
+  /**
+   * What a drop would do, without changing the board.
+   * Used to light legal cells while a token is being dragged.
+   */
+  previewDrop(tokenId: string, place: Place, slot: number): DropPreview {
+    if (this.phase !== 'playing') {
+      return 'blocked';
     }
-    occupant.level += 1;
-    this.tokens = this.tokens.filter((entry) => entry.id !== token.id);
-    this.cooldown.delete(token.id);
-    this.cooldown.set(occupant.id, 0.15);
-    this.mergeCount += 1;
-    return { ok: true, action: 'merge' };
+    const token = this.tokens.find((entry) => entry.id === tokenId);
+    if (!token || slot < 0 || slot >= this.slotCount(place)) {
+      return 'blocked';
+    }
+    const occupant = this.tokens.find((entry) => entry.place === place && entry.slot === slot);
+    if (!occupant) {
+      return 'move';
+    }
+    if (occupant.id === token.id) {
+      return 'stay';
+    }
+    if (occupant.type === token.type && occupant.level === token.level) {
+      return token.level >= this.config.units.maxLevel ? 'blocked' : 'merge';
+    }
+    return 'swap';
+  }
+
+  /** Places a level-1 token without spending mantou. The first-run guide uses this. */
+  placeGuideToken(type: string, place: Place, slot: number): Token | null {
+    if (this.phase !== 'playing' || !this.config.units.types[type]) {
+      return null;
+    }
+    if (slot < 0 || slot >= this.slotCount(place)) {
+      return null;
+    }
+    if (this.tokens.some((entry) => entry.place === place && entry.slot === slot)) {
+      return null;
+    }
+    const token: Token = {
+      id: this.nextId('u'),
+      type,
+      level: 1,
+      place,
+      slot,
+    };
+    this.tokens.push(token);
+    return token;
   }
 
   tick(dt: number): void {
