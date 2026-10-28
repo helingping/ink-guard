@@ -50,6 +50,42 @@ export function benchPosition(board: BoardConfig, index: number): BoardPoint {
   };
 }
 
+/** How far from a slot center a release still belongs to that slot. Covers the cell graphic, including its corner. */
+export function slotReach(board: BoardConfig, place: 'grid' | 'bench'): number {
+  if (place === 'grid') {
+    const step = board.cellSize + board.cellGap;
+    return Math.hypot(step / 2, step / 2) + 6;
+  }
+  return Math.hypot(board.benchStep / 2, board.cellSize / 2) + 6;
+}
+
+/**
+ * Slot under a pointer in board space. Grid and bench do not overlap;
+ * if a point is inside both catch radii, the nearer center wins.
+ */
+export function dropSlotAt(
+  board: BoardConfig,
+  x: number,
+  y: number,
+): { place: 'grid' | 'bench'; slot: number } | null {
+  const grid = nearestIndex(board, 'grid', x, y, slotReach(board, 'grid'));
+  const bench = nearestIndex(board, 'bench', x, y, slotReach(board, 'bench'));
+  if (grid < 0 && bench < 0) {
+    return null;
+  }
+  if (grid >= 0 && bench >= 0) {
+    const gridPos = gridPosition(board, grid);
+    const benchPos = benchPosition(board, bench);
+    const gridD = Math.hypot(gridPos.x - x, gridPos.y - y);
+    const benchD = Math.hypot(benchPos.x - x, benchPos.y - y);
+    return gridD <= benchD ? { place: 'grid', slot: grid } : { place: 'bench', slot: bench };
+  }
+  if (grid >= 0) {
+    return { place: 'grid', slot: grid };
+  }
+  return { place: 'bench', slot: bench };
+}
+
 export function nearestIndex(
   board: BoardConfig,
   place: 'grid' | 'bench',

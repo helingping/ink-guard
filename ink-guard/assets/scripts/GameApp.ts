@@ -23,7 +23,7 @@ import {
 } from 'cc';
 import { loadGameConfig } from './config/ConfigService';
 import type { GameConfig } from './config/ConfigTypes';
-import { nearestIndex } from './logic/geometry';
+import { dropSlotAt } from './logic/geometry';
 import { GameSim, tokenPosition, type DropResult, type Place, type Token } from './logic/GameSim';
 import { Ink, RANK, inkColor, paintRange } from './view/InkWidgets';
 
@@ -525,26 +525,11 @@ export class GameApp extends Component {
     }
     // Slots own their cells. drop() merges or swaps when the chosen slot is taken,
     // so the pointer only has to land inside the slot, not on the other token.
-    const board = this.config.board;
-    const step = board.cellSize + board.cellGap;
-    const gridReach = Math.hypot(step / 2, step / 2) + 6;
-    const benchReach = Math.hypot(board.benchStep / 2, board.cellSize / 2) + 6;
-    const grid = nearestIndex(board, 'grid', x, y, gridReach);
-    const bench = nearestIndex(board, 'bench', x, y, benchReach);
-    if (grid >= 0 && bench >= 0) {
-      const gridPos = tokenPosition(this.config, { id: '', type: '', level: 1, place: 'grid', slot: grid });
-      const benchPos = tokenPosition(this.config, { id: '', type: '', level: 1, place: 'bench', slot: bench });
-      const gridD = Math.hypot(gridPos.x - x, gridPos.y - y);
-      const benchD = Math.hypot(benchPos.x - x, benchPos.y - y);
-      return gridD <= benchD ? this.sim.drop(id, 'grid', grid) : this.sim.drop(id, 'bench', bench);
+    const slot = dropSlotAt(this.config.board, x, y);
+    if (!slot) {
+      return { ok: true, action: 'stay' };
     }
-    if (grid >= 0) {
-      return this.sim.drop(id, 'grid', grid);
-    }
-    if (bench >= 0) {
-      return this.sim.drop(id, 'bench', bench);
-    }
-    return { ok: true, action: 'stay' };
+    return this.sim.drop(id, slot.place, slot.slot);
   }
 
   private pointerId(event: PointerEvent): number {
