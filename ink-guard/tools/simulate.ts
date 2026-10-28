@@ -203,6 +203,13 @@ function ruleTests(raw: Record<string, unknown>): void {
   check(slotsOk, 'releasing on a cell center or corner selects that cell');
   check(dropSlotAt(config.board, 0, 480) === null, 'a point in the HUD is not a slot');
 
+  const styles = config.units.order.map((id) => config.units.types[id].style);
+  const motions = config.units.order.map((id) => config.units.types[id].motion);
+  check(styles.filter((style) => style === 'melee').length >= 1 && styles.includes('ranged'), 'the roster has both melee and ranged tokens');
+  check(new Set(motions).size === motions.length, 'each token has its own attack motion');
+  check(config.units.types.dao.style === 'melee' && config.units.types.gong.style === 'ranged', 'blade is melee and bow is ranged');
+  deliveryTests(raw);
+
   const costs = new GameSim(config, 1);
   const first = costs.nextCost();
   check(first === config.economy.recruitCostBase, 'first recruit uses the base cost');
@@ -332,6 +339,63 @@ function ruleTests(raw: Record<string, unknown>): void {
   check(config.units.types.qiang.byLevel[1].range >= cornerD, 'back-row corners sit inside spear level-1 range');
   check(dao1 >= midD && dao1 < backD, 'level-1 blade reaches the middle row and still needs a merge for the back row');
   check(dao2 >= backD, 'blade reaches the back row after one merge');
+}
+
+function deliveryTests(raw: Record<string, unknown>): void {
+  const meleeRaw = cloneRaw(raw);
+  const meleeBoard = meleeRaw.board as Record<string, unknown>;
+  meleeBoard.path = [{ x: 0, y: 120 }, { x: 0, y: 0 }];
+  meleeBoard.projectileSpeed = 1;
+  const meleeWaves = meleeRaw.waves as Record<string, unknown>;
+  meleeWaves.firstDelay = 0;
+  meleeWaves.gapSeconds = 0;
+  meleeWaves.waves = [{ id: 1, count: 1, hp: 30, speed: 8, damage: 1, interval: 5 }];
+  const meleeUnits = meleeRaw.units as { types: Record<string, { levels: Array<Record<string, number>> }> };
+  meleeUnits.types.dao.levels[0].atk = 30;
+  meleeUnits.types.dao.levels[0].range = 400;
+  meleeUnits.types.dao.levels[0].aspd = 1;
+  const melee = new GameSim(normalizeConfig(meleeRaw), () => 0);
+  const recruitedMelee = melee.recruit();
+  check(recruitedMelee.ok && recruitedMelee.token.type === 'dao', 'delivery setup recruits a blade');
+  if (recruitedMelee.ok) {
+    melee.drop(recruitedMelee.token.id, 'grid', 2);
+  }
+  melee.tick(0.04);
+  const waiting = melee.enemies[0];
+  check(!!waiting && waiting.hp === 30 && melee.shots.length === 1 && melee.shots[0].style === 'melee', 'a melee swing is in the air before it connects');
+  melee.tick(0.08);
+  check(melee.enemies.length === 0 || melee.enemies[0].hp <= 0, 'melee damage lands when the strike finishes, ignoring projectile speed');
+
+  const rangedRaw = cloneRaw(raw);
+  const rangedBoard = rangedRaw.board as Record<string, unknown>;
+  rangedBoard.path = [{ x: 0, y: 360 }, { x: 0, y: 0 }];
+  rangedBoard.projectileSpeed = 5000;
+  const rangedWaves = rangedRaw.waves as Record<string, unknown>;
+  rangedWaves.firstDelay = 0;
+  rangedWaves.gapSeconds = 0;
+  rangedWaves.waves = [{ id: 1, count: 1, hp: 40, speed: 6, damage: 1, interval: 5 }];
+  const rangedUnits = rangedRaw.units as {
+    types: Record<string, { shotSpeed: number; levels: Array<Record<string, number>> }>;
+  };
+  rangedUnits.types.gong.shotSpeed = 80;
+  rangedUnits.types.gong.levels[0].atk = 40;
+  rangedUnits.types.gong.levels[0].range = 800;
+  rangedUnits.types.gong.levels[0].aspd = 1;
+  const ranged = new GameSim(normalizeConfig(rangedRaw), () => 0.5);
+  const recruitedRanged = ranged.recruit();
+  check(recruitedRanged.ok && recruitedRanged.token.type === 'gong', 'delivery setup recruits a bow');
+  if (recruitedRanged.ok) {
+    ranged.drop(recruitedRanged.token.id, 'grid', 2);
+  }
+  ranged.tick(0.05);
+  const flyer = ranged.shots[0];
+  const target = ranged.enemies[0];
+  check(
+    !!flyer && flyer.style === 'ranged' && flyer.motion === 'arrow' && flyer.speed === 80 && !!target && target.hp === 40,
+    'a ranged shot is still flying and has not hit yet',
+  );
+  ranged.tick(5);
+  check(ranged.enemies.length === 0 || ranged.enemies[0].hp <= 0, 'the arrow hits after it travels');
 }
 
 function distanceToPath(points: Array<{ x: number; y: number }>, x: number, y: number): number {
