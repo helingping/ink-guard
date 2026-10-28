@@ -4,6 +4,8 @@ import type {
   BoardConfig,
   BoardPoint,
   EconomyConfig,
+  FoeTypeConfig,
+  FoesConfig,
   GameConfig,
   LevelStat,
   UnitTypeConfig,
@@ -85,17 +87,18 @@ function parseUnits(raw: unknown): UnitsConfig {
       const atk = needNumber(levelObj, 'atk', file);
       const aspd = needNumber(levelObj, 'aspd', file);
       const range = needNumber(levelObj, 'range', file);
+      const hp = needNumber(levelObj, 'hp', file);
       if (!Number.isInteger(level) || level < 1 || level > maxLevel) {
         fail(file, `${id} 的 level ${level} 超出 1..${maxLevel}`);
       }
       if (seen.has(level)) {
         fail(file, `${id} 的 ${level} 品重复了`);
       }
-      if (atk < 0 || aspd <= 0 || range <= 0) {
-        fail(file, `${id} ${level} 品的 atk/aspd/range 不合法`);
+      if (atk < 0 || aspd <= 0 || range <= 0 || hp <= 0) {
+        fail(file, `${id} ${level} 品的 atk/aspd/range/hp 不合法`);
       }
       seen.add(level);
-      byLevel[level] = { level, atk, aspd, range };
+      byLevel[level] = { level, atk, aspd, range, hp };
     }
     for (let level = 1; level <= maxLevel; level += 1) {
       if (!byLevel[level]) {
@@ -148,6 +151,68 @@ function parseUnits(raw: unknown): UnitsConfig {
   return { maxLevel, order, types };
 }
 
+function parseFoes(raw: unknown, units: UnitsConfig): FoesConfig {
+  const file = 'foes.json';
+  const obj = asRecord(raw, file);
+  const orderRaw = needArray(obj, 'order', file);
+  const order = orderRaw.map((entry, index) => {
+    if (typeof entry !== 'string' || entry.trim() === '') {
+      fail(file, `order[${index}] 必须是墨寇 id`);
+    }
+    return entry;
+  });
+  if (order.length === 0 || new Set(order).size !== order.length) {
+    fail(file, 'order 不能空，也不能重复');
+  }
+  const typesRaw = asRecord(obj.types, file);
+  const types: Record<string, FoeTypeConfig> = {};
+  for (const id of order) {
+    if (!(id in typesRaw)) {
+      fail(file, `缺少墨寇 ${id}`);
+    }
+    const entry = asRecord(typesRaw[id], file);
+    const vfxId = needString(entry, 'vfx', file);
+    const vfx = units.types[vfxId];
+    if (!vfx) {
+      fail(file, `${id} 的 vfx 必须是已有字令`);
+    }
+    const ink = needString(entry, 'ink', file);
+    if (!/^#[0-9a-fA-F]{6}$/.test(ink)) {
+      fail(file, `${id} 的 ink 必须是 #RRGGBB`);
+    }
+    const atk = needNumber(entry, 'atk', file);
+    const aspd = needNumber(entry, 'aspd', file);
+    if (atk <= 0 || aspd <= 0) {
+      fail(file, `${id} 的 atk/aspd 必须大于 0`);
+    }
+    const level1 = vfx.byLevel[1];
+    types[id] = {
+      id,
+      displayName: needString(entry, 'displayName', file),
+      glyph: needString(entry, 'glyph', file),
+      ink,
+      style: vfx.style,
+      motion: vfx.motion,
+      styleLabel: vfx.styleLabel,
+      motionLabel: vfx.motionLabel,
+      strike: vfx.strike,
+      shotSpeed: vfx.shotSpeed,
+      range: level1.range,
+      atk,
+      aspd,
+      vfx: vfxId,
+    };
+  }
+  const extra = Object.keys(typesRaw).filter((id) => !order.includes(id));
+  if (extra.length > 0) {
+    fail(file, `order 未列出 ${extra.join(', ')}`);
+  }
+  if (!order.some((id) => types[id].style === 'melee') || !order.some((id) => types[id].style === 'ranged')) {
+    fail(file, '墨寇里要同时有近战和远程，远程复用字令的 shotSpeed');
+  }
+  return { order, types };
+}
+
 function parseEconomy(raw: unknown): EconomyConfig {
   const file = 'economy.json';
   const obj = asRecord(raw, file);
@@ -188,6 +253,19 @@ function parseWaves(raw: unknown): WavesConfig {
   }
   const waves = needArray(obj, 'waves', file).map((entry, index) => {
     const waveObj = asRecord(entry, file);
+    let roster: string[] = [];
+    if (waveObj.roster !== undefined) {
+      const rosterRaw = waveObj.roster;
+      if (!Array.isArray(rosterRaw) || rosterRaw.length === 0) {
+        fail(file, `第 ${index + 1} 波 roster 必须是非空数组`);
+      }
+      roster = rosterRaw.map((entry, rosterIndex) => {
+        if (typeof entry !== 'string' || entry.trim() === '') {
+          fail(file, `第 ${index + 1} 波 roster[${rosterIndex}] 必须是墨寇 id`);
+        }
+        return entry;
+      });
+    }
     const wave: WaveDef = {
       id: needNumber(waveObj, 'id', file),
       count: needNumber(waveObj, 'count', file),
@@ -195,6 +273,7 @@ function parseWaves(raw: unknown): WavesConfig {
       speed: needNumber(waveObj, 'speed', file),
       damage: needNumber(waveObj, 'damage', file),
       interval: needNumber(waveObj, 'interval', file),
+      roster,
     };
     if (!Number.isInteger(wave.count) || wave.count <= 0) {
       fail(file, `第 ${index + 1} 波 count 必须是正整数`);
@@ -271,13 +350,29 @@ function parseBoard(raw: unknown): BoardConfig {
   return board;
 }
 
+function linkFoes(waves: WavesConfig, foes: FoesConfig): void {
+  const known = new Set(foes.order);
+  for (const wave of waves.waves) {
+    for (const id of wave.roster) {
+      if (!known.has(id)) {
+        fail('waves.json', `roster 里的 ${id} 不是墨寇`);
+      }
+    }
+  }
+}
+
 export function normalizeConfig(raw: unknown): GameConfig {
   const root = asRecord(raw, 'configs');
+  const units = parseUnits(root.units);
+  const foes = parseFoes(root.foes, units);
+  const waves = parseWaves(root.waves);
+  linkFoes(waves, foes);
   return {
-    units: parseUnits(root.units),
+    units,
+    foes,
     economy: parseEconomy(root.economy),
     adou: parseAdou(root.adou),
-    waves: parseWaves(root.waves),
+    waves,
     board: parseBoard(root.board),
   };
 }

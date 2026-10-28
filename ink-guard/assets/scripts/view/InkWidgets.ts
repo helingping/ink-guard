@@ -20,15 +20,44 @@ export function inkColor(hex: string, alpha = 255): Color {
   return color;
 }
 
-/** Range ring while a token is dragged. Static chrome is scene UI, not Graphics. */
-export function paintRange(g: Graphics, radius: number, hex: string): void {
+export interface RangeRing {
+  x: number;
+  y: number;
+  radius: number;
+  hex: string;
+  fillAlpha: number;
+  strokeAlpha: number;
+  lineWidth: number;
+}
+
+export interface RangeDot {
+  x: number;
+  y: number;
+  hex: string;
+}
+
+/**
+ * Range circles and road marks in board space. The Graphics node stays at the origin.
+ * Radii come from config; this only paints them.
+ */
+export function paintRanges(g: Graphics, rings: RangeRing[], dots: RangeDot[]): void {
   g.clear();
-  g.lineWidth = 3;
-  g.strokeColor = inkColor(hex, 110);
-  g.circle(0, 0, radius);
-  g.stroke();
-  g.lineWidth = 1;
-  g.strokeColor = inkColor(hex, 40);
-  g.circle(0, 0, Math.max(4, radius - 8));
-  g.stroke();
+  for (const ring of rings) {
+    g.fillColor = inkColor(ring.hex, ring.fillAlpha);
+    g.circle(ring.x, ring.y, ring.radius);
+    g.fill();
+    g.lineWidth = ring.lineWidth;
+    g.strokeColor = inkColor(ring.hex, ring.strokeAlpha);
+    g.circle(ring.x, ring.y, ring.radius);
+    g.stroke();
+    g.lineWidth = 1;
+    g.strokeColor = inkColor(ring.hex, Math.max(24, Math.floor(ring.strokeAlpha * 0.35)));
+    g.circle(ring.x, ring.y, Math.max(4, ring.radius - 8));
+    g.stroke();
+  }
+  for (const dot of dots) {
+    g.fillColor = inkColor(dot.hex, 210);
+    g.circle(dot.x, dot.y, 4.5);
+    g.fill();
+  }
 }

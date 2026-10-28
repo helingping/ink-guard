@@ -24,22 +24,25 @@ import {
 } from 'cc';
 import { loadGameConfig } from './config/ConfigService';
 import type { GameConfig } from './config/ConfigTypes';
-import { dropSlotAt } from './logic/geometry';
-import { GameSim, tokenPosition, type DropResult, type Place, type Token } from './logic/GameSim';
-import { Ink, RANK, inkColor, paintRange } from './view/InkWidgets';
+import { dropSlotAt, pathMarksWithin, slotsWithin } from './logic/geometry';
+import { GameSim, tokenPosition, type DropResult, type Place, type Shot, type Token } from './logic/GameSim';
+import { Ink, RANK, inkColor, paintRanges, type RangeDot, type RangeRing } from './view/InkWidgets';
 
 const { ccclass, property } = _decorator;
 
-interface TokenView {
-  id: string;
-  typeId: string;
-  root: Node;
+interface PoseBody {
+  poseKey: string;
   body: Sprite;
-  rank: Label;
   idle: SpriteFrame | null;
   poseFrames: SpriteFrame[];
   poseTime: number;
   poseDuration: number;
+}
+
+interface TokenView extends PoseBody {
+  id: string;
+  root: Node;
+  rank: Label;
   shownLevel: number;
 }
 
@@ -47,7 +50,7 @@ interface ShotView {
   node: Node;
   sprite: Sprite;
   style: string;
-  typeId: string;
+  vfx: string;
   frames: SpriteFrame[];
 }
 
@@ -59,10 +62,26 @@ interface BurstView {
   life: number;
 }
 
-interface EnemyView {
+interface EnemyView extends PoseBody {
   root: Node;
   hp: Label;
+  glyph: Label;
   shownHp: number;
+}
+
+interface ActorRef {
+  kind: 'token' | 'foe';
+  id: string;
+}
+
+interface RangeFocus {
+  key: string;
+  x: number;
+  y: number;
+  range: number;
+  ink: string;
+  caption: string;
+  shotAge: number;
 }
 
 interface SlotMark {
@@ -77,7 +96,7 @@ interface PointerEvent {
   getID?: () => number;
 }
 
-const HINT = '招募字令，拖上阵。相同字令叠在一起升品，不同字令可以换位。';
+const HINT = '招募字令，拖上阵。点选或悬停可看射程。相同字令叠成品，不同字令可换位。';
 const GUIDE_HINT = '把两枚「刀」叠在一起。拖动时金色可合成，青色可换位，绿色是空位。';
 const GUIDE_KEY = 'ink-guard-merge-guide';
 const UNIT_ORDER = ['dao', 'qiang', 'gong', 'qi'] as const;
@@ -92,7 +111,8 @@ const MARK_COLOR: Record<'move' | 'merge' | 'swap', string> = {
  * Binds the scene HUD and drives the simulation.
  * Chrome (board slots, recruit, speed, win/lose panel) lives in main.scene.
  * This class does not build that tree. Tokens, enemies and shots are runtime
- * actors because they come and go; the range ring stays on the scene Graphics.
+ * actors because they come and go. The range ring stays on the scene Graphics
+ * and is redrawn for the hovered, selected, or attacking unit.
  */
 @ccclass('GameApp')
 export class GameApp extends Component {
@@ -198,8 +218,14 @@ export class GameApp extends Component {
   private shotViews = new Map<string, ShotView>();
   private bursts: BurstView[] = [];
   private poseFrames = new Map<string, SpriteFrame[]>();
+  private foeIdles = new Map<string, SpriteFrame>();
   private swingFrames = new Map<string, SpriteFrame[]>();
   private arrowFrames = new Map<string, SpriteFrame>();
+  private hover: ActorRef | null = null;
+  private selected: ActorRef | null = null;
+  private rangeCaption: Label | null = null;
+  /** Keeps a unit's range readable after a short melee strike. Values are clock expiry. */
+  private rangePing = new Map<string, number>();
   private lastDt = 0;
   private floatViews = new Map<string, { node: Node; label: Label }>();
 
@@ -332,6 +358,7 @@ export class GameApp extends Component {
     } else if (this.tutorialNode) {
       this.tutorialNode.active = false;
     }
+    this.ensureRangeCaption();
     void this.loadAttackArt(config);
     this.syncAll();
     console.log(`[InkGuard] ready, waves=${config.waves.waves.length}, adou=${config.adou.maxHp}`);
@@ -368,6 +395,16 @@ export class GameApp extends Component {
         }
       }
     }));
+    await Promise.all(config.foes.order.map(async (id) => {
+      const poses = await this.loadSequence(`pose/${id}`, 4);
+      if (poses.length > 0) {
+        this.poseFrames.set(id, poses);
+      }
+      const idle = await this.loadFrame(`foes/${id}`);
+      if (idle) {
+        this.foeIdles.set(id, idle);
+      }
+    }));
   }
 
   private zeroHitbox(node: Node | null): void {
@@ -387,12 +424,12 @@ export class GameApp extends Component {
     const count = config.board.gridCols * config.board.gridRows;
     for (let i = 0; i < count; i += 1) {
       const cell = board.getChildByName(`Cell${i}`);
-      const pos = tokenPosition(config, { id: '', type: '', level: 1, place: 'grid', slot: i });
+      const pos = tokenPosition(config, { place: 'grid', slot: i });
       cell?.setPosition(pos.x, pos.y, 0);
     }
     for (let i = 0; i < config.board.benchSlots; i += 1) {
       const slot = board.getChildByName(`Bench${i}`);
-      const pos = tokenPosition(config, { id: '', type: '', level: 1, place: 'bench', slot: i });
+      const pos = tokenPosition(config, { place: 'bench', slot: i });
       slot?.setPosition(pos.x, pos.y, 0);
     }
     const gate = config.board.path[config.board.path.length - 1];
@@ -494,10 +531,7 @@ export class GameApp extends Component {
     viewToken.root.setScale(1.08, 1.08, 1);
     viewToken.root.setSiblingIndex(999);
     viewToken.root.setPosition(this.dragPos.x, this.dragPos.y, 0);
-    const stat = this.sim.statOf(token.type, token.level);
-    paintRange(this.rangeGraphics, stat.range, this.sim.config.units.types[token.type].ink);
-    this.rangeNode.active = true;
-    this.rangeNode.setPosition(this.dragPos.x, this.dragPos.y, 0);
+    this.syncRange();
     this.updateMarks(id, this.dragPos.x, this.dragPos.y);
   }
 
@@ -514,7 +548,7 @@ export class GameApp extends Component {
     if (viewToken) {
       viewToken.root.setPosition(this.dragPos.x, this.dragPos.y, 0);
     }
-    this.rangeNode?.setPosition(this.dragPos.x, this.dragPos.y, 0);
+    this.syncRange();
     this.updateMarks(this.dragId, this.dragPos.x, this.dragPos.y);
   }
 
@@ -532,9 +566,7 @@ export class GameApp extends Component {
     this.dragId = null;
     this.dragTouch = -1;
     this.uiLockUntil = Date.now() + 180;
-    if (this.rangeNode) {
-      this.rangeNode.active = false;
-    }
+    this.selected = { kind: 'token', id: tokenId };
     this.clearMarks();
     const viewToken = this.tokenViews.get(tokenId);
     if (viewToken) {
@@ -545,6 +577,7 @@ export class GameApp extends Component {
       this.showToast(result.reason === 'max-level' ? '已是最高品' : '这里放不下');
     }
     this.syncTokens();
+    this.syncRange();
   }
 
   private updateMarks(tokenId: string, x: number, y: number): void {
@@ -623,6 +656,7 @@ export class GameApp extends Component {
     this.syncShots();
     this.syncFloats();
     this.syncHud();
+    this.syncRange();
   }
 
   private syncTokens(): void {
@@ -647,6 +681,11 @@ export class GameApp extends Component {
         viewToken.rank.string = `${RANK[token.level] ?? token.level}品`;
       }
       this.advancePose(viewToken);
+      const idle = this.frameFor(token.type);
+      if (viewToken.poseTime < 0 && idle && viewToken.idle !== idle) {
+        viewToken.idle = idle;
+        viewToken.body.spriteFrame = idle;
+      }
       if (this.dragId !== token.id) {
         const pos = tokenPosition(this.config, token);
         viewToken.root.setPosition(pos.x, pos.y, 0);
@@ -695,9 +734,19 @@ export class GameApp extends Component {
     root.on(Node.EventType.TOUCH_MOVE, onMove, this);
     root.on(Node.EventType.TOUCH_END, onEnd, this);
     root.on(Node.EventType.TOUCH_CANCEL, onEnd, this);
+    const onEnter = () => {
+      this.hover = { kind: 'token', id: token.id };
+    };
+    const onLeave = () => {
+      if (this.hover?.kind === 'token' && this.hover.id === token.id) {
+        this.hover = null;
+      }
+    };
+    root.on(Node.EventType.MOUSE_ENTER, onEnter, this);
+    root.on(Node.EventType.MOUSE_LEAVE, onLeave, this);
     return {
       id: token.id,
-      typeId: token.type,
+      poseKey: token.type,
       root,
       body: sprite,
       rank,
@@ -709,34 +758,45 @@ export class GameApp extends Component {
     };
   }
 
-  private advancePose(viewToken: TokenView): void {
-    if (viewToken.poseTime < 0) {
+  private advancePose(view: PoseBody): void {
+    if (view.poseTime < 0) {
       return;
     }
-    const frames = this.poseFrames.get(viewToken.typeId) ?? viewToken.poseFrames;
-    viewToken.poseFrames = frames;
-    viewToken.poseTime += this.lastDt;
-    if (frames.length === 0 || viewToken.poseTime >= viewToken.poseDuration) {
-      viewToken.poseTime = -1;
-      if (viewToken.idle) {
-        viewToken.body.spriteFrame = viewToken.idle;
+    const frames = this.poseFrames.get(view.poseKey) ?? view.poseFrames;
+    view.poseFrames = frames;
+    view.poseTime += this.lastDt;
+    if (frames.length === 0 || view.poseTime >= view.poseDuration) {
+      view.poseTime = -1;
+      if (view.idle) {
+        view.body.spriteFrame = view.idle;
       }
       return;
     }
-    const index = Math.min(frames.length - 1, Math.floor((viewToken.poseTime / viewToken.poseDuration) * frames.length));
-    viewToken.body.spriteFrame = frames[index];
+    const index = Math.min(frames.length - 1, Math.floor((view.poseTime / view.poseDuration) * frames.length));
+    view.body.spriteFrame = frames[index];
   }
 
-  private startPose(tokenId: string, typeId: string): void {
-    const viewToken = this.tokenViews.get(tokenId);
-    const frames = this.poseFrames.get(typeId);
-    if (!viewToken || !frames || frames.length === 0) {
+  private startPose(sourceId: string): void {
+    const token = this.tokenViews.get(sourceId);
+    if (token) {
+      this.playPose(token);
       return;
     }
-    viewToken.poseFrames = frames;
-    viewToken.poseTime = 0;
-    viewToken.poseDuration = 0.34;
-    viewToken.body.spriteFrame = frames[0];
+    const enemy = this.enemyViews.get(sourceId);
+    if (enemy) {
+      this.playPose(enemy);
+    }
+  }
+
+  private playPose(view: PoseBody): void {
+    const frames = this.poseFrames.get(view.poseKey);
+    if (!frames || frames.length === 0) {
+      return;
+    }
+    view.poseFrames = frames;
+    view.poseTime = 0;
+    view.poseDuration = 0.34;
+    view.body.spriteFrame = frames[0];
   }
 
   private frameFor(type: string): SpriteFrame | null {
@@ -761,19 +821,16 @@ export class GameApp extends Component {
     this.sim.enemies.forEach((enemy, index) => {
       let viewEnemy = this.enemyViews.get(enemy.id);
       if (!viewEnemy) {
-        const root = this.actorNode(`Enemy-${enemy.id}`, 64, 64);
-        this.actorLayer!.addChild(root);
-        const sprite = root.addComponent(Sprite);
-        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
-        sprite.spriteFrame = this.enemyFrame;
-        const ui = root.getComponent(UITransform);
-        ui?.setContentSize(64, 64);
-        this.addText(root, '寇', 22, inkColor('#f7f1e4'), this.titleFont, 48, 32).node.setPosition(0, 6, 0);
-        const hp = this.addText(root, '', 16, inkColor('#f4efe4'), this.bodyFont, 56, 22);
-        hp.node.setPosition(0, -36, 0);
-        viewEnemy = { root, hp, shownHp: -1 };
+        viewEnemy = this.createEnemy(enemy.id, enemy.kind);
         this.enemyViews.set(enemy.id, viewEnemy);
       }
+      const idle = this.foeIdles.get(enemy.kind) ?? null;
+      if (viewEnemy.poseTime < 0 && idle && viewEnemy.idle !== idle) {
+        viewEnemy.idle = idle;
+        viewEnemy.body.spriteFrame = idle;
+        viewEnemy.glyph.node.active = false;
+      }
+      this.advancePose(viewEnemy);
       const bob = Math.sin(this.clock * 3 + index) * 2;
       viewEnemy.root.setPosition(enemy.x, enemy.y + bob, 0);
       const hp = Math.max(0, Math.ceil(enemy.hp));
@@ -784,6 +841,51 @@ export class GameApp extends Component {
     });
   }
 
+  private createEnemy(id: string, kind: string): EnemyView {
+    const foe = this.config?.foes.types[kind];
+    const root = this.actorNode(`Enemy-${id}`, 84, 84);
+    this.actorLayer!.addChild(root);
+    const sprite = root.addComponent(Sprite);
+    sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+    sprite.type = Sprite.Type.SIMPLE;
+    const idle = this.foeIdles.get(kind) ?? null;
+    if (idle) {
+      sprite.spriteFrame = idle;
+    } else if (this.enemyFrame) {
+      sprite.spriteFrame = this.enemyFrame;
+    }
+    root.getComponent(UITransform)?.setContentSize(84, 84);
+    const glyph = this.addText(root, foe?.glyph ?? '寇', 40, inkColor(foe?.ink ?? Ink.ink), this.titleFont, 76, 56);
+    glyph.node.setPosition(0, 2, 0);
+    glyph.node.active = !idle;
+    const style = this.addText(root, foe?.styleLabel ?? '', 14, inkColor(foe?.ink ?? Ink.ink), this.bodyFont, 72, 20);
+    style.node.setPosition(0, -52, 0);
+    const hp = this.addText(root, '', 16, inkColor('#f4efe4'), this.bodyFont, 72, 22);
+    hp.node.setPosition(0, -72, 0);
+    const onEnter = () => {
+      this.hover = { kind: 'foe', id };
+    };
+    const onLeave = () => {
+      if (this.hover?.kind === 'foe' && this.hover.id === id) {
+        this.hover = null;
+      }
+    };
+    root.on(Node.EventType.MOUSE_ENTER, onEnter, this);
+    root.on(Node.EventType.MOUSE_LEAVE, onLeave, this);
+    return {
+      poseKey: kind,
+      root,
+      body: sprite,
+      hp,
+      glyph,
+      shownHp: -1,
+      idle,
+      poseFrames: [],
+      poseTime: -1,
+      poseDuration: 0.34,
+    };
+  }
+
   private syncShots(): void {
     if (!this.sim || !this.actorLayer) {
       return;
@@ -792,7 +894,7 @@ export class GameApp extends Component {
     for (const [id, view] of this.shotViews) {
       if (!alive.has(id)) {
         if (view.style === 'ranged') {
-          this.spawnBurst(view.typeId, view.node.position.x, view.node.position.y);
+          this.spawnBurst(view.vfx, view.node.position.x, view.node.position.y);
         }
         view.node.destroy();
         this.shotViews.delete(id);
@@ -803,7 +905,8 @@ export class GameApp extends Component {
       if (!view) {
         view = this.createShotView(shot);
         this.shotViews.set(shot.id, view);
-        this.startPose(shot.sourceId, shot.typeId);
+        this.startPose(shot.sourceId);
+        this.rangePing.set(shot.side === 'foe' ? `foe:${shot.sourceId}` : `token:${shot.sourceId}`, this.clock + 0.85);
       }
       view.node.setPosition(shot.x, shot.y, 0);
       const dx = shot.x - shot.fromX;
@@ -823,14 +926,14 @@ export class GameApp extends Component {
     this.advanceBursts();
   }
 
-  private createShotView(shot: { id: string; style: string; typeId: string; ink: string }): ShotView {
+  private createShotView(shot: Shot): ShotView {
     const ranged = shot.style === 'ranged';
     const node = this.actorNode(`Shot-${shot.id}`, ranged ? 72 : 150, ranged ? 36 : 150);
     this.actorLayer!.addChild(node);
     const sprite = node.addComponent(Sprite);
     sprite.sizeMode = Sprite.SizeMode.CUSTOM;
-    const arrow = this.arrowFrames.get(shot.typeId) ?? null;
-    const frames = this.swingFrames.get(shot.typeId) ?? [];
+    const arrow = this.arrowFrames.get(shot.vfx) ?? null;
+    const frames = this.swingFrames.get(shot.vfx) ?? [];
     if (ranged && arrow) {
       sprite.spriteFrame = arrow;
     } else if (frames.length > 0) {
@@ -841,7 +944,7 @@ export class GameApp extends Component {
     }
     const ui = node.getComponent(UITransform);
     ui?.setContentSize(ranged ? 72 : 150, ranged ? 36 : 150);
-    return { node, sprite, style: shot.style, typeId: shot.typeId, frames };
+    return { node, sprite, style: shot.style, vfx: shot.vfx, frames };
   }
 
   private spawnBurst(typeId: string, x: number, y: number): void {
@@ -994,8 +1097,14 @@ export class GameApp extends Component {
     this.pointerDown = false;
     this.dragId = null;
     this.dragTouch = -1;
+    this.hover = null;
+    this.selected = null;
+    this.rangePing.clear();
     if (this.rangeNode) {
       this.rangeNode.active = false;
+    }
+    if (this.rangeCaption) {
+      this.rangeCaption.node.active = false;
     }
     this.clearMarks();
     this.timeScale = 1;
@@ -1041,6 +1150,221 @@ export class GameApp extends Component {
     this.shotViews.clear();
     this.bursts = [];
     this.floatViews.clear();
+  }
+
+  private syncRange(): void {
+    if (!this.sim || !this.config || !this.rangeNode || !this.rangeGraphics) {
+      return;
+    }
+    const strong = this.strongFocus() ?? this.latestAttack();
+    const attackers = this.attackFocuses();
+    const rings: RangeRing[] = [];
+    const dots: RangeDot[] = [];
+    const seen = new Set<string>();
+    const push = (focus: RangeFocus, emphasized: boolean) => {
+      if (seen.has(focus.key)) {
+        return;
+      }
+      seen.add(focus.key);
+      rings.push({
+        x: focus.x,
+        y: focus.y,
+        radius: focus.range,
+        hex: focus.ink,
+        fillAlpha: emphasized ? 36 : 16,
+        strokeAlpha: emphasized ? 160 : 88,
+        lineWidth: emphasized ? 3 : 1.5,
+      });
+      if (!emphasized) {
+        return;
+      }
+      for (const point of pathMarksWithin(this.config!.board.path, focus.x, focus.y, focus.range)) {
+        dots.push({ x: point.x, y: point.y, hex: focus.ink });
+      }
+    };
+    const emphasized = strong;
+    if (strong) {
+      push(strong, true);
+    }
+    for (const focus of attackers) {
+      push(focus, false);
+    }
+    paintRanges(this.rangeGraphics, rings, dots);
+    this.rangeNode.setPosition(0, 0, 0);
+    this.rangeNode.active = rings.length > 0;
+    this.placeRangeCaption(emphasized);
+    if (!this.pointerDown) {
+      this.paintRangeCells(emphasized);
+    }
+  }
+
+  private strongFocus(): RangeFocus | null {
+    if (this.pointerDown && this.dragId) {
+      return this.focusFor({ kind: 'token', id: this.dragId }, this.dragPos.x, this.dragPos.y, 0);
+    }
+    if (this.hover && this.refAlive(this.hover)) {
+      return this.focusFor(this.hover, null, null, 0);
+    }
+    if (this.selected && this.refAlive(this.selected)) {
+      return this.focusFor(this.selected, null, null, 0);
+    }
+    return null;
+  }
+
+  private attackFocuses(): RangeFocus[] {
+    if (!this.sim) {
+      return [];
+    }
+    const refs = new Map<string, ActorRef>();
+    for (const shot of this.sim.shots) {
+      const ref: ActorRef = shot.side === 'foe'
+        ? { kind: 'foe', id: shot.sourceId }
+        : { kind: 'token', id: shot.sourceId };
+      refs.set(`${ref.kind}:${ref.id}`, ref);
+    }
+    for (const [key, until] of this.rangePing) {
+      if (until < this.clock) {
+        this.rangePing.delete(key);
+        continue;
+      }
+      if (refs.has(key)) {
+        continue;
+      }
+      const sep = key.indexOf(':');
+      const kind = key.slice(0, sep);
+      if (kind !== 'token' && kind !== 'foe') {
+        continue;
+      }
+      refs.set(key, { kind, id: key.slice(sep + 1) });
+    }
+    const focuses: RangeFocus[] = [];
+    for (const ref of refs.values()) {
+      const focus = this.focusFor(ref, null, null, 0);
+      if (focus) {
+        focuses.push(focus);
+      }
+    }
+    return focuses;
+  }
+
+  /** The attacker whose range should stay up when nothing is selected. */
+  private latestAttack(): RangeFocus | null {
+    let bestKey = '';
+    let bestUntil = -1;
+    for (const [key, until] of this.rangePing) {
+      if (until >= this.clock && until > bestUntil) {
+        bestUntil = until;
+        bestKey = key;
+      }
+    }
+    if (!bestKey) {
+      return null;
+    }
+    const sep = bestKey.indexOf(':');
+    const kind = bestKey.slice(0, sep);
+    if (kind !== 'token' && kind !== 'foe') {
+      return null;
+    }
+    return this.focusFor({ kind, id: bestKey.slice(sep + 1) }, null, null, 0);
+  }
+
+  private focusFor(ref: ActorRef, x: number | null, y: number | null, shotAge: number): RangeFocus | null {
+    if (!this.sim || !this.config) {
+      return null;
+    }
+    if (ref.kind === 'token') {
+      const token = this.sim.tokens.find((entry) => entry.id === ref.id && entry.hp > 0);
+      if (!token) {
+        return null;
+      }
+      const pos = x !== null && y !== null ? { x, y } : tokenPosition(this.config, token);
+      const stat = this.sim.statOf(token.type, token.level);
+      const type = this.config.units.types[token.type];
+      const rank = RANK[token.level] ?? `${token.level}`;
+      return {
+        key: `token:${token.id}`,
+        x: pos.x,
+        y: pos.y,
+        range: stat.range,
+        ink: type.ink,
+        caption: `${type.glyph} ${rank}品 ${type.styleLabel} 射程 ${stat.range}`,
+        shotAge,
+      };
+    }
+    const enemy = this.sim.enemies.find((entry) => entry.id === ref.id && entry.hp > 0);
+    if (!enemy) {
+      return null;
+    }
+    const foe = this.config.foes.types[enemy.kind];
+    if (!foe) {
+      return null;
+    }
+    return {
+      key: `foe:${enemy.id}`,
+      x: x ?? enemy.x,
+      y: y ?? enemy.y,
+      range: foe.range,
+      ink: foe.ink,
+      caption: `${foe.glyph} ${foe.styleLabel} 射程 ${foe.range}`,
+      shotAge,
+    };
+  }
+
+  private refAlive(ref: ActorRef): boolean {
+    if (!this.sim) {
+      return false;
+    }
+    if (ref.kind === 'token') {
+      return this.sim.tokens.some((entry) => entry.id === ref.id && entry.hp > 0);
+    }
+    return this.sim.enemies.some((entry) => entry.id === ref.id && entry.hp > 0);
+  }
+
+  private paintRangeCells(focus: RangeFocus | null): void {
+    if (!this.config) {
+      return;
+    }
+    const slots = new Set(
+      focus ? slotsWithin(this.config.board, focus.x, focus.y, focus.range) : [],
+    );
+    for (const mark of this.slotMarks) {
+      if (mark.place !== 'grid') {
+        mark.node.active = false;
+        mark.node.setScale(1, 1, 1);
+        continue;
+      }
+      const on = slots.has(mark.slot);
+      mark.node.active = on;
+      if (on && focus) {
+        mark.sprite.color = inkColor(focus.ink, 230);
+        mark.node.setScale(1.06, 1.06, 1);
+      } else {
+        mark.node.setScale(1, 1, 1);
+      }
+    }
+  }
+
+  private ensureRangeCaption(): void {
+    if (this.rangeCaption || !this.rangeNode) {
+      return;
+    }
+    this.rangeCaption = this.addText(this.rangeNode, '', 18, inkColor(Ink.ink), this.bodyFont, 320, 28);
+    this.rangeCaption.node.active = false;
+  }
+
+  private placeRangeCaption(focus: RangeFocus | null): void {
+    this.ensureRangeCaption();
+    if (!this.rangeCaption) {
+      return;
+    }
+    if (!focus) {
+      this.rangeCaption.node.active = false;
+      return;
+    }
+    this.rangeCaption.node.active = true;
+    this.rangeCaption.string = focus.caption;
+    this.rangeCaption.color = inkColor(focus.ink);
+    this.rangeCaption.node.setPosition(focus.x, focus.y + 74, 0);
   }
 
   private actorNode(name: string, width: number, height: number): Node {

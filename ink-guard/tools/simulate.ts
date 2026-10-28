@@ -7,7 +7,7 @@ import type { GameConfig } from '../assets/scripts/config/ConfigTypes';
 import { normalizeConfig } from '../assets/scripts/config/validateConfig';
 import type { Token } from '../assets/scripts/logic/GameSim';
 import { GameSim } from '../assets/scripts/logic/GameSim';
-import { benchPosition, buildPath, dropSlotAt, gridPosition, pointOnPath } from '../assets/scripts/logic/geometry';
+import { benchPosition, buildPath, dropSlotAt, gridPosition, pathMarksWithin, pointOnPath, slotsWithin } from '../assets/scripts/logic/geometry';
 
 declare function require(name: string): {
   readFileSync(path: string, encoding: 'utf8'): string;
@@ -45,7 +45,7 @@ function configDir(): string {
 function loadRaw(): Record<string, unknown> {
   const dir = configDir();
   const raw: Record<string, unknown> = {};
-  for (const name of ['units', 'economy', 'adou', 'waves', 'board']) {
+  for (const name of ['units', 'foes', 'economy', 'adou', 'waves', 'board']) {
     raw[name] = JSON.parse(fs.readFileSync(`${dir}/${name}.json`, 'utf8')) as unknown;
   }
   return raw;
@@ -339,6 +339,33 @@ function ruleTests(raw: Record<string, unknown>): void {
   check(config.units.types.qiang.byLevel[1].range >= cornerD, 'back-row corners sit inside spear level-1 range');
   check(dao1 >= midD && dao1 < backD, 'level-1 blade reaches the middle row and still needs a merge for the back row');
   check(dao2 >= backD, 'blade reaches the back row after one merge');
+
+  const front = gridPosition(config.board, 2);
+  const tiny = slotsWithin(config.board, front.x, front.y, 1);
+  const bladeSlots = slotsWithin(config.board, front.x, front.y, dao1);
+  const bowSlots = slotsWithin(config.board, front.x, front.y, config.units.types.gong.byLevel[1].range);
+  check(tiny.length === 1 && tiny[0] === 2, 'a 1px range highlights only the token cell');
+  check(bladeSlots.includes(2) && bladeSlots.length > 1, 'blade range highlights its cell and neighbors');
+  check(bowSlots.length > bladeSlots.length, 'bow range highlights more cells than blade');
+  const backBladeRoad = pathMarksWithin(config.board.path, backCenter.x, backCenter.y, dao1);
+  const backBowRoad = pathMarksWithin(config.board.path, backCenter.x, backCenter.y, config.units.types.gong.byLevel[1].range);
+  check(backBladeRoad.length === 0, 'level-1 blade on the back row does not cover the road');
+  check(backBowRoad.length > 0, 'level-1 bow on the back row covers part of the road');
+
+  const rangedFoes = config.foes.order.filter((id) => config.foes.types[id].style === 'ranged');
+  check(rangedFoes.length >= 1 && config.foes.order.some((id) => config.foes.types[id].style === 'melee'), 'foes include melee and ranged ink enemies');
+  for (const id of config.foes.order) {
+    const foe = config.foes.types[id];
+    const vfx = config.units.types[foe.vfx];
+    check(foe.range === vfx.byLevel[1].range, `${id} uses ${foe.vfx} level-1 range`);
+    check(
+      foe.shotSpeed === vfx.shotSpeed && foe.strike === vfx.strike && foe.style === vfx.style && foe.motion === vfx.motion,
+      `${id} reuses ${foe.vfx} delivery`,
+    );
+  }
+  const authoredRoster = config.waves.waves.flatMap((wave) => wave.roster);
+  check(authoredRoster.some((id) => config.foes.types[id]?.style === 'ranged'), 'a wave spawns a ranged foe');
+  foeDeliveryTests(raw);
 }
 
 function deliveryTests(raw: Record<string, unknown>): void {
@@ -362,7 +389,8 @@ function deliveryTests(raw: Record<string, unknown>): void {
   }
   melee.tick(0.04);
   const waiting = melee.enemies[0];
-  check(!!waiting && waiting.hp === 30 && melee.shots.length === 1 && melee.shots[0].style === 'melee', 'a melee swing is in the air before it connects');
+  const swing = melee.shots.find((shot) => shot.side === 'player');
+  check(!!waiting && waiting.hp === 30 && !!swing && swing.style === 'melee', 'a melee swing is in the air before it connects');
   melee.tick(0.08);
   check(melee.enemies.length === 0 || melee.enemies[0].hp <= 0, 'melee damage lands when the strike finishes, ignoring projectile speed');
 
@@ -388,7 +416,7 @@ function deliveryTests(raw: Record<string, unknown>): void {
     ranged.drop(recruitedRanged.token.id, 'grid', 2);
   }
   ranged.tick(0.05);
-  const flyer = ranged.shots[0];
+  const flyer = ranged.shots.find((shot) => shot.side === 'player');
   const target = ranged.enemies[0];
   check(
     !!flyer && flyer.style === 'ranged' && flyer.motion === 'arrow' && flyer.speed === 80 && !!target && target.hp === 40,
@@ -396,6 +424,64 @@ function deliveryTests(raw: Record<string, unknown>): void {
   );
   ranged.tick(5);
   check(ranged.enemies.length === 0 || ranged.enemies[0].hp <= 0, 'the arrow hits after it travels');
+}
+
+function foeDeliveryTests(raw: Record<string, unknown>): void {
+  const meleeRaw = cloneRaw(raw);
+  const meleeBoard = meleeRaw.board as Record<string, unknown>;
+  meleeBoard.path = [{ x: 0, y: 120 }, { x: 80, y: 120 }];
+  const meleeWaves = meleeRaw.waves as Record<string, unknown>;
+  meleeWaves.firstDelay = 0;
+  meleeWaves.gapSeconds = 0;
+  meleeWaves.waves = [{ id: 1, count: 1, hp: 5000, speed: 8, damage: 1, interval: 5, roster: ['kou'] }];
+  const meleeFoes = meleeRaw.foes as { types: Record<string, { atk: number; aspd: number }> };
+  meleeFoes.types.kou.atk = 11;
+  meleeFoes.types.kou.aspd = 0.2;
+  const melee = new GameSim(normalizeConfig(meleeRaw), () => 0);
+  const recruited = melee.recruit();
+  check(recruited.ok, 'foe melee setup recruits');
+  if (recruited.ok) {
+    melee.drop(recruited.token.id, 'grid', 2);
+  }
+  const token = melee.tokens[0];
+  const before = token?.hp ?? 0;
+  melee.tick(0.02);
+  const windup = melee.shots.find((shot) => shot.side === 'foe');
+  check(
+    !!windup && windup.style === 'melee' && windup.motion === 'slash' && windup.vfx === 'dao' && token?.hp === before,
+    'a foe melee swing reuses the blade strike and has not hit yet',
+  );
+  melee.tick(0.1);
+  check(token?.hp === before - 11, 'foe melee damage lands when the shared strike finishes');
+
+  const rangedRaw = cloneRaw(raw);
+  const rangedBoard = rangedRaw.board as Record<string, unknown>;
+  rangedBoard.path = [{ x: 0, y: 200 }, { x: 40, y: 200 }];
+  const rangedWaves = rangedRaw.waves as Record<string, unknown>;
+  rangedWaves.firstDelay = 0;
+  rangedWaves.gapSeconds = 0;
+  rangedWaves.waves = [{ id: 1, count: 1, hp: 5000, speed: 6, damage: 1, interval: 5, roster: ['shi'] }];
+  const rangedUnits = rangedRaw.units as { types: Record<string, { shotSpeed: number }> };
+  rangedUnits.types.gong.shotSpeed = 100;
+  const rangedFoes = rangedRaw.foes as { types: Record<string, { atk: number; aspd: number }> };
+  rangedFoes.types.shi.atk = 9;
+  rangedFoes.types.shi.aspd = 0.2;
+  const ranged = new GameSim(normalizeConfig(rangedRaw), () => 0);
+  const recruitedRanged = ranged.recruit();
+  check(recruitedRanged.ok, 'foe ranged setup recruits');
+  if (recruitedRanged.ok) {
+    ranged.drop(recruitedRanged.token.id, 'grid', 2);
+  }
+  const rangedToken = ranged.tokens[0];
+  const rangedBefore = rangedToken?.hp ?? 0;
+  ranged.tick(0.05);
+  const arrow = ranged.shots.find((shot) => shot.side === 'foe');
+  check(
+    !!arrow && arrow.style === 'ranged' && arrow.motion === 'arrow' && arrow.speed === 100 && arrow.vfx === 'gong' && rangedToken?.hp === rangedBefore,
+    'a foe arrow flies at the bow shotSpeed and has not hit yet',
+  );
+  ranged.tick(2);
+  check(rangedToken?.hp === rangedBefore - 9, 'the foe arrow damages the token after it travels');
 }
 
 function distanceToPath(points: Array<{ x: number; y: number }>, x: number, y: number): number {

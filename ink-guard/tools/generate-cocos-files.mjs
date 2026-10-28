@@ -80,6 +80,7 @@ const metas = {
   'assets/scripts/logic/GameSim.ts': ['typescript', '7a6e1c35-8d42-4f90-b561-0e9c3a7b5d28'],
   'assets/scripts/view/InkWidgets.ts': ['typescript', '5c9a3e62-0b78-4d14-a293-6f1e8c4b0d57'],
   'assets/resources/configs/units.json': ['json', 'b31f6a90-2c48-4e17-9d05-8a6b1e4c7f23'],
+  'assets/resources/configs/foes.json': ['json', 'a86e0f45-719d-436c-a25a-dfb06391c478'],
   'assets/resources/configs/economy.json': ['json', 'c42a7b01-3d59-4f28-ae16-9b7c2f5d8034'],
   'assets/resources/configs/adou.json': ['json', 'd53b8c12-4e6a-4039-bf27-ac8d306e9145'],
   'assets/resources/configs/waves.json': ['json', 'e64c9d23-5f7b-414a-8038-bd9e417fa256'],

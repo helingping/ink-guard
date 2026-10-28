@@ -1,5 +1,5 @@
 import type { AttackStyle, GameConfig, LevelStat, WaveDef } from '../config/ConfigTypes';
-import { benchPosition, buildPath, gridPosition, pointOnPath, type Polyline } from './geometry';
+import { benchPosition, buildPath, gridPosition, inRange, pointOnPath, type Polyline } from './geometry';
 import { mulberry32 } from './rng';
 
 export type Place = 'bench' | 'grid';
@@ -11,10 +11,14 @@ export interface Token {
   level: number;
   place: Place;
   slot: number;
+  hp: number;
+  maxHp: number;
 }
 
 export interface Enemy {
   id: string;
+  /** Foe id from foes.json. Glyph, range and delivery come from that row. */
+  kind: string;
   hp: number;
   maxHp: number;
   speed: number;
@@ -25,6 +29,8 @@ export interface Enemy {
   waveId: number;
 }
 
+export type ShotSide = 'player' | 'foe';
+
 export interface Shot {
   id: string;
   x: number;
@@ -33,8 +39,13 @@ export interface Shot {
   fromY: number;
   damage: number;
   targetId: string;
+  /** player shots seek foes; foe shots seek deployed tokens. */
+  side: ShotSide;
   ink: string;
+  /** Pose key: token type, or foe id. */
   typeId: string;
+  /** Fx sheet to reuse. For a foe this is the linked token id, not the foe id. */
+  vfx: string;
   sourceId: string;
   style: AttackStyle;
   motion: string;
@@ -91,6 +102,7 @@ export class GameSim {
   private path: Polyline;
   private spawnCooldown = 0;
   private cooldown = new Map<string, number>();
+  private foeCooldown = new Map<string, number>();
 
   constructor(readonly config: GameConfig, seed: number | (() => number)) {
     this.rng = typeof seed === 'function' ? seed : mulberry32(seed);
@@ -144,14 +156,7 @@ export class GameSim {
     this.recruitCount += 1;
     const order = this.config.units.order;
     const index = Math.min(order.length - 1, Math.floor(this.rng() * order.length));
-    const token: Token = {
-      id: this.nextId('u'),
-      type: order[index],
-      level: 1,
-      place: 'bench',
-      slot,
-    };
-    this.tokens.push(token);
+    const token = this.spawnToken(order[index], 1, 'bench', slot);
     return { ok: true, token };
   }
 
@@ -177,6 +182,9 @@ export class GameSim {
         return { ok: false, reason: 'max-level' };
       }
       occupant.level += 1;
+      const raised = this.statOf(occupant.type, occupant.level);
+      occupant.maxHp = raised.hp;
+      occupant.hp = raised.hp;
       this.tokens = this.tokens.filter((entry) => entry.id !== token.id);
       this.cooldown.delete(token.id);
       this.cooldown.set(occupant.id, 0.15);
@@ -228,15 +236,7 @@ export class GameSim {
     if (this.tokens.some((entry) => entry.place === place && entry.slot === slot)) {
       return null;
     }
-    const token: Token = {
-      id: this.nextId('u'),
-      type,
-      level: 1,
-      place,
-      slot,
-    };
-    this.tokens.push(token);
-    return token;
+    return this.spawnToken(type, 1, place, slot);
   }
 
   tick(dt: number): void {
@@ -251,10 +251,12 @@ export class GameSim {
     this.tickFloats(dt);
     this.spawnPending(dt);
     this.tickAttacks(dt);
+    this.tickFoes(dt);
     this.tickShots(dt);
     this.tickEnemies(dt);
     this.enemies = this.enemies.filter((enemy) => enemy.hp > 0);
-    this.shots = this.shots.filter((shot) => this.enemies.some((enemy) => enemy.id === shot.targetId));
+    this.tokens = this.tokens.filter((token) => token.hp > 0);
+    this.shots = this.shots.filter((shot) => this.shotHasTarget(shot));
     if (this.adouHp <= 0) {
       this.adouHp = 0;
       this.phase = 'lose';
@@ -287,6 +289,7 @@ export class GameSim {
     this.seq = 1;
     this.spawnCooldown = 0;
     this.cooldown.clear();
+    this.foeCooldown.clear();
     this.path = buildPath(this.config.board.path);
   }
 
@@ -341,9 +344,12 @@ export class GameSim {
   }
 
   private spawnEnemy(wave: WaveDef): void {
+    const roster = wave.roster.length > 0 ? wave.roster : [this.defaultFoe()];
+    const kind = roster[this.spawnedInWave % roster.length];
     const point = pointOnPath(this.path, 0);
     this.enemies.push({
       id: this.nextId('e'),
+      kind,
       hp: wave.hp,
       maxHp: wave.hp,
       speed: wave.speed,
@@ -355,10 +361,31 @@ export class GameSim {
     });
   }
 
+  private defaultFoe(): string {
+    const foes = this.config.foes;
+    const melee = foes.order.find((id) => foes.types[id].style === 'melee');
+    return melee ?? foes.order[0];
+  }
+
+  private spawnToken(type: string, level: number, place: Place, slot: number): Token {
+    const stat = this.statOf(type, level);
+    const token: Token = {
+      id: this.nextId('u'),
+      type,
+      level,
+      place,
+      slot,
+      hp: stat.hp,
+      maxHp: stat.hp,
+    };
+    this.tokens.push(token);
+    return token;
+  }
+
   private tickAttacks(dt: number): void {
     const active = new Set<string>();
     for (const token of this.tokens) {
-      if (token.place !== 'grid') {
+      if (token.place !== 'grid' || token.hp <= 0) {
         continue;
       }
       active.add(token.id);
@@ -384,8 +411,10 @@ export class GameSim {
         fromY: origin.y,
         damage: stat.atk,
         targetId: target.id,
+        side: 'player',
         ink: type.ink,
         typeId: token.type,
+        vfx: token.type,
         sourceId: token.id,
         style: type.style,
         motion: type.motion,
@@ -401,6 +430,55 @@ export class GameSim {
     }
   }
 
+  private tickFoes(dt: number): void {
+    const alive = new Set<string>();
+    for (const enemy of this.enemies) {
+      if (enemy.hp <= 0) {
+        continue;
+      }
+      alive.add(enemy.id);
+      const foe = this.config.foes.types[enemy.kind];
+      if (!foe) {
+        continue;
+      }
+      let readyIn = (this.foeCooldown.get(enemy.id) ?? 0) - dt;
+      if (readyIn > 0) {
+        this.foeCooldown.set(enemy.id, readyIn);
+        continue;
+      }
+      const target = this.nearestToken(enemy.x, enemy.y, foe.range);
+      if (!target) {
+        this.foeCooldown.set(enemy.id, 0);
+        continue;
+      }
+      this.foeCooldown.set(enemy.id, 1 / foe.aspd);
+      this.shots.push({
+        id: this.nextId('s'),
+        x: enemy.x,
+        y: enemy.y,
+        fromX: enemy.x,
+        fromY: enemy.y,
+        damage: foe.atk,
+        targetId: target.id,
+        side: 'foe',
+        ink: foe.ink,
+        typeId: enemy.kind,
+        vfx: foe.vfx,
+        sourceId: enemy.id,
+        style: foe.style,
+        motion: foe.motion,
+        strike: foe.style === 'melee' ? foe.strike : 0,
+        speed: foe.style === 'ranged' ? foe.shotSpeed : 0,
+        age: 0,
+      });
+    }
+    for (const id of this.foeCooldown.keys()) {
+      if (!alive.has(id)) {
+        this.foeCooldown.delete(id);
+      }
+    }
+  }
+
   private nearestEnemy(x: number, y: number, range: number): Enemy | null {
     let best: Enemy | null = null;
     let bestD = Infinity;
@@ -409,9 +487,26 @@ export class GameSim {
         continue;
       }
       const d = Math.hypot(enemy.x - x, enemy.y - y);
-      if (d <= range && d < bestD) {
+      if (inRange(x, y, enemy.x, enemy.y, range) && d < bestD) {
         bestD = d;
         best = enemy;
+      }
+    }
+    return best;
+  }
+
+  private nearestToken(x: number, y: number, range: number): Token | null {
+    let best: Token | null = null;
+    let bestD = Infinity;
+    for (const token of this.tokens) {
+      if (token.place !== 'grid' || token.hp <= 0) {
+        continue;
+      }
+      const pos = tokenPosition(this.config, token);
+      const d = Math.hypot(pos.x - x, pos.y - y);
+      if (inRange(x, y, pos.x, pos.y, range) && d < bestD) {
+        bestD = d;
+        best = token;
       }
     }
     return best;
@@ -421,7 +516,7 @@ export class GameSim {
     const hitRadius = this.config.board.hitRadius;
     const kept: Shot[] = [];
     for (const shot of this.shots) {
-      const target = this.enemies.find((enemy) => enemy.id === shot.targetId && enemy.hp > 0);
+      const target = this.shotPoint(shot);
       if (!target) {
         continue;
       }
@@ -432,7 +527,7 @@ export class GameSim {
         shot.x = shot.fromX + (target.x - shot.fromX) * t;
         shot.y = shot.fromY + (target.y - shot.fromY) * t;
         if (shot.age >= shot.strike) {
-          this.applyDamage(target, shot.damage);
+          target.hit(shot.damage);
         } else {
           kept.push(shot);
         }
@@ -443,7 +538,7 @@ export class GameSim {
       const dist = Math.hypot(dx, dy);
       const step = Math.max(0, shot.speed) * dt;
       if (dist <= step || dist <= hitRadius) {
-        this.applyDamage(target, shot.damage);
+        target.hit(shot.damage);
       } else {
         shot.x += (dx / dist) * step;
         shot.y += (dy / dist) * step;
@@ -452,6 +547,39 @@ export class GameSim {
       }
     }
     this.shots = kept;
+  }
+
+  private shotPoint(shot: Shot): { x: number; y: number; hit: (amount: number) => void } | null {
+    if (shot.side === 'foe') {
+      const token = this.tokens.find((entry) => entry.id === shot.targetId && entry.hp > 0 && entry.place === 'grid');
+      if (!token) {
+        return null;
+      }
+      const pos = tokenPosition(this.config, token);
+      return { x: pos.x, y: pos.y, hit: (amount) => this.applyTokenDamage(token, amount) };
+    }
+    const enemy = this.enemies.find((entry) => entry.id === shot.targetId && entry.hp > 0);
+    if (!enemy) {
+      return null;
+    }
+    return { x: enemy.x, y: enemy.y, hit: (amount) => this.applyDamage(enemy, amount) };
+  }
+
+  private shotHasTarget(shot: Shot): boolean {
+    return this.shotPoint(shot) !== null;
+  }
+
+  private applyTokenDamage(token: Token, amount: number): void {
+    if (token.hp <= 0) {
+      return;
+    }
+    token.hp -= amount;
+    const pos = tokenPosition(this.config, token);
+    this.pushFloat(pos.x, pos.y, `${Math.round(amount)}`);
+    if (token.hp <= 0) {
+      token.hp = 0;
+      this.cooldown.delete(token.id);
+    }
   }
 
   private applyDamage(enemy: Enemy, amount: number): void {
@@ -532,7 +660,7 @@ export class GameSim {
   }
 }
 
-export function tokenPosition(config: GameConfig, token: Token): { x: number; y: number } {
+export function tokenPosition(config: GameConfig, token: { place: Place; slot: number }): { x: number; y: number } {
   return token.place === 'grid'
     ? gridPosition(config.board, token.slot)
     : benchPosition(config.board, token.slot);

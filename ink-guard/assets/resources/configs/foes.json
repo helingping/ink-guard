@@ -1,0 +1,30 @@
+{
+  "comment": "Ink foes. style, motion, strike, shotSpeed and range are copied at load from the linked vfx token (level-1 range, that token's strike and shotSpeed). Pose sheets live under resources/pose/<id>. Hit fx and the arrow are the vfx token's existing frames. atk and aspd are the foe's own.",
+  "order": ["kou", "mao", "shi"],
+  "types": {
+    "kou": {
+      "displayName": "Raider",
+      "glyph": "寇",
+      "ink": "#6b2b28",
+      "vfx": "dao",
+      "atk": 6,
+      "aspd": 0.45
+    },
+    "mao": {
+      "displayName": "Pike",
+      "glyph": "矛",
+      "ink": "#145248",
+      "vfx": "qiang",
+      "atk": 5,
+      "aspd": 0.4
+    },
+    "shi": {
+      "displayName": "Arrow",
+      "glyph": "矢",
+      "ink": "#1d3a78",
+      "vfx": "gong",
+      "atk": 4,
+      "aspd": 0.5
+    }
+  }
+}
