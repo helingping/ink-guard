@@ -1,48 +1,41 @@
 import {
   _decorator,
+  Button,
   Canvas,
+  Color,
   Component,
   EventMouse,
   EventTouch,
+  Font,
   Graphics,
+  HorizontalTextAlignment,
   Input,
   input,
   Label,
   Node,
+  Overflow,
   ResolutionPolicy,
+  Sprite,
+  SpriteFrame,
+  sys,
   UIOpacity,
   UITransform,
   Vec3,
+  VerticalTextAlignment,
   view,
 } from 'cc';
 import { loadGameConfig } from './config/ConfigService';
 import type { GameConfig } from './config/ConfigTypes';
 import { nearestIndex } from './logic/geometry';
-import { GameSim, tokenPosition, type DropResult, type Token } from './logic/GameSim';
-import {
-  Ink,
-  RANK,
-  addLabel,
-  inkColor,
-  inkNode,
-  paintBackground,
-  paintBar,
-  paintButton,
-  paintCell,
-  paintEnemy,
-  paintRange,
-  paintSeal,
-  paintShot,
-} from './view/InkWidgets';
+import { GameSim, tokenPosition, type DropResult, type Place, type Token } from './logic/GameSim';
+import { Ink, RANK, inkColor, paintRange } from './view/InkWidgets';
 
-const { ccclass } = _decorator;
+const { ccclass, property } = _decorator;
 
 interface TokenView {
   id: string;
   root: Node;
-  glyph: Label;
   rank: Label;
-  graphics: Graphics;
   shownLevel: number;
 }
 
@@ -52,52 +45,134 @@ interface EnemyView {
   shownHp: number;
 }
 
+interface SlotMark {
+  place: Place;
+  slot: number;
+  node: Node;
+  sprite: Sprite;
+}
+
 interface PointerEvent {
   getLocation(): { x: number; y: number };
   getID?: () => number;
 }
 
-const HINT = '招募字令，拖上阵。相同字令且同品，叠在一起升一品。';
+const HINT = '招募字令，拖上阵。相同字令叠在一起升品，不同字令可以换位。';
+const GUIDE_HINT = '把两枚「刀」叠在一起。拖动时金色可合成，青色可换位，绿色是空位。';
+const GUIDE_KEY = 'ink-guard-merge-guide';
+const UNIT_ORDER = ['dao', 'qiang', 'gong', 'qi'] as const;
+
+const MARK_COLOR: Record<'move' | 'merge' | 'swap', string> = {
+  move: Ink.moss,
+  merge: Ink.gold,
+  swap: Ink.mist,
+};
 
 /**
- * Runtime board for the ink-guard MVP.
- * The serialized scene only holds Canvas / Camera / GameRoot; widgets are built
- * here so Creator 3.8 can press Play without a hand-authored node per cell.
- *
- * Hit testing: Board and Actors use a 0-size transform so they do not swallow
- * clicks. Interactive children (tokens, buttons) keep their own sizes. Overlay
- * is last and inactive until the round ends.
+ * Binds the scene HUD and drives the simulation.
+ * Chrome (board slots, recruit, speed, win/lose panel) lives in main.scene.
+ * This class does not build that tree. Tokens, enemies and shots are runtime
+ * actors because they come and go; the range ring stays on the scene Graphics.
  */
 @ccclass('GameApp')
 export class GameApp extends Component {
+  @property(Node)
+  boardLayer: Node | null = null;
+
+  @property(Node)
+  actorLayer: Node | null = null;
+
+  @property(Node)
+  hudLayer: Node | null = null;
+
+  @property(Label)
+  loadingLabel: Label | null = null;
+
+  @property(Label)
+  titleLabel: Label | null = null;
+
+  @property(Label)
+  waveLabel: Label | null = null;
+
+  @property(Label)
+  hpLabel: Label | null = null;
+
+  @property(Sprite)
+  hpFill: Sprite | null = null;
+
+  @property(Label)
+  mantouLabel: Label | null = null;
+
+  @property(Label)
+  hintLabel: Label | null = null;
+
+  @property(Button)
+  recruitButton: Button | null = null;
+
+  @property(Label)
+  recruitLabel: Label | null = null;
+
+  @property(Sprite)
+  recruitSprite: Sprite | null = null;
+
+  @property(Label)
+  speedLabel: Label | null = null;
+
+  @property(Node)
+  bannerNode: Node | null = null;
+
+  @property(Label)
+  bannerLabel: Label | null = null;
+
+  @property(Node)
+  overlay: Node | null = null;
+
+  @property(Label)
+  overlayTitle: Label | null = null;
+
+  @property(Label)
+  overlayBody: Label | null = null;
+
+  @property(Node)
+  tutorialNode: Node | null = null;
+
+  @property(Label)
+  tutorialLabel: Label | null = null;
+
+  @property(Node)
+  adouSeal: Node | null = null;
+
+  @property(Node)
+  rangeNode: Node | null = null;
+
+  @property(Graphics)
+  rangeGraphics: Graphics | null = null;
+
+  @property(Font)
+  titleFont: Font | null = null;
+
+  @property(Font)
+  bodyFont: Font | null = null;
+
+  @property(SpriteFrame)
+  btnCinnabar: SpriteFrame | null = null;
+
+  @property(SpriteFrame)
+  btnMuted: SpriteFrame | null = null;
+
+  @property(SpriteFrame)
+  enemyFrame: SpriteFrame | null = null;
+
+  @property(SpriteFrame)
+  shotFrame: SpriteFrame | null = null;
+
+  @property([SpriteFrame])
+  unitFrames: SpriteFrame[] = [];
+
   private canvas: Canvas | null = null;
   private config: GameConfig | null = null;
   private sim: GameSim | null = null;
-  private boardLayer: Node | null = null;
-  private actorLayer: Node | null = null;
-  private hudLayer: Node | null = null;
-  private loading: Label | null = null;
-
-  private titleLabel: Label | null = null;
-  private waveLabel: Label | null = null;
-  private hpLabel: Label | null = null;
-  private hpGraphics: Graphics | null = null;
-  private shownHp = -1;
-  private mantouLabel: Label | null = null;
-  private hintLabel: Label | null = null;
-  private recruitLabel: Label | null = null;
-  private recruitGraphics: Graphics | null = null;
-  private recruitEnabled = true;
-  private speedLabel: Label | null = null;
-  private bannerNode: Node | null = null;
-  private bannerLabel: Label | null = null;
-  private overlay: Node | null = null;
-  private overlayTitle: Label | null = null;
-  private overlayBody: Label | null = null;
-  private overlayPhase = 'playing';
-  private rangeNode: Node | null = null;
-  private rangeGraphics: Graphics | null = null;
-
+  private slotMarks: SlotMark[] = [];
   private tokenViews = new Map<string, TokenView>();
   private enemyViews = new Map<string, EnemyView>();
   private shotViews = new Map<string, Node>();
@@ -114,16 +189,23 @@ export class GameApp extends Component {
   private toast = '';
   private toastTimer = 0;
   private inputBound = false;
+  private shownHp = -1;
+  private recruitEnabled = true;
+  private overlayPhase = 'playing';
+  private guidePending = false;
+  private hpFillWidth = 440;
 
   onLoad(): void {
     this.canvas = this.node.parent?.getComponent(Canvas) ?? null;
-    this.boardLayer = this.ensureLayer('Board');
-    this.actorLayer = this.ensureLayer('Actors');
-    this.hudLayer = this.ensureLayer('Hud');
     this.zeroHitbox(this.boardLayer);
     this.zeroHitbox(this.actorLayer);
     this.zeroHitbox(this.hudLayer);
-    this.loading = addLabel(this.hudLayer, 'Loading', '研墨中…', 32, inkColor(Ink.brown), 420, 80);
+    const decor = this.node.getChildByName('Decor');
+    this.zeroHitbox(decor);
+    if (this.loadingLabel) {
+      this.loadingLabel.node.active = true;
+      this.loadingLabel.string = '研墨中…';
+    }
     void this.boot();
   }
 
@@ -151,6 +233,38 @@ export class GameApp extends Component {
     this.syncAll();
   }
 
+  public onRecruitClick(): void {
+    if (!this.sim || this.sim.phase !== 'playing' || !this.claimUi()) {
+      return;
+    }
+    const result = this.sim.recruit();
+    if (!result.ok) {
+      this.showToast(result.reason === 'broke' ? '馒头不够' : '席位已满');
+    }
+    this.syncTokens();
+    this.syncHud();
+  }
+
+  public onSpeedClick(): void {
+    if (!this.claimUi()) {
+      return;
+    }
+    this.timeScale = this.timeScale === 1 ? 3 : 1;
+    if (this.speedLabel) {
+      this.speedLabel.string = this.timeScale === 1 ? '常速' : '三倍';
+    }
+  }
+
+  public onRestartClick(): void {
+    this.restart();
+  }
+
+  public onTutorialClick(): void {
+    if (this.tutorialNode) {
+      this.tutorialNode.active = false;
+    }
+  }
+
   private async boot(): Promise<void> {
     try {
       const config = await loadGameConfig();
@@ -160,8 +274,9 @@ export class GameApp extends Component {
       this.begin(config);
     } catch (err) {
       const message = err instanceof Error ? err.message : '未知错误';
-      if (this.loading) {
-        this.loading.string = `配置没有读出来\n${message}`;
+      if (this.loadingLabel) {
+        this.loadingLabel.node.active = true;
+        this.loadingLabel.string = `配置没有读出来\n${message}`;
       }
       console.error('[InkGuard]', err);
     }
@@ -174,151 +289,128 @@ export class GameApp extends Component {
     if (camera) {
       camera.clearColor = inkColor(Ink.paper);
     }
-    this.loading?.node.destroy();
-    this.loading = null;
-    this.buildStatic(config);
+    if (this.loadingLabel) {
+      this.loadingLabel.node.active = false;
+    }
+    if (this.titleLabel) {
+      this.titleLabel.string = '墨卫';
+    }
+    if (this.tutorialLabel) {
+      this.tutorialLabel.string = '开局有两枚「刀」。拖到一起就升品。\n金色合成，青色换位，绿色空位。';
+    }
+    this.layoutBoard(config);
+    this.layoutHpFill();
+    this.collectMarks();
     this.sim = new GameSim(config, Date.now() % 2147483647);
+    this.guidePending = !this.guideSeen();
+    if (this.guidePending) {
+      this.grantGuide();
+      if (this.tutorialNode) {
+        this.tutorialNode.active = true;
+      }
+    } else if (this.tutorialNode) {
+      this.tutorialNode.active = false;
+    }
     this.bindInput();
-    this.boardLayer?.setSiblingIndex(1);
-    this.actorLayer?.setSiblingIndex(2);
-    this.hudLayer?.setSiblingIndex(3);
-    this.overlay?.setSiblingIndex(999);
     this.syncAll();
     console.log(`[InkGuard] ready, waves=${config.waves.waves.length}, adou=${config.adou.maxHp}`);
   }
 
-  private ensureLayer(name: string): Node {
-    const existing = this.node.getChildByName(name);
-    if (existing) {
-      existing.layer = this.node.layer;
-      return existing;
+  private zeroHitbox(node: Node | null): void {
+    if (!node) {
+      return;
     }
-    const created = inkNode(name, 0, 0);
-    this.node.addChild(created);
-    return created;
-  }
-
-  private zeroHitbox(node: Node): void {
     const transform = node.getComponent(UITransform) ?? node.addComponent(UITransform);
     transform.setContentSize(0, 0);
     transform.setAnchorPoint(0.5, 0.5);
   }
 
-  private buildStatic(config: GameConfig): void {
+  private layoutBoard(config: GameConfig): void {
     const board = this.boardLayer;
-    const hud = this.hudLayer;
-    if (!board || !hud) {
+    if (!board) {
       return;
     }
-
-    const background = inkNode('Background', config.board.designWidth, config.board.designHeight);
-    this.node.addChild(background);
-    background.setSiblingIndex(0);
-    paintBackground(background.addComponent(Graphics), config.board);
-
-    const cellW = config.board.cellSize;
-    const cellH = config.board.cellSize - 8;
-    for (let i = 0; i < config.board.gridCols * config.board.gridRows; i += 1) {
-      const cell = inkNode(`Cell${i}`, cellW, cellH);
-      board.addChild(cell);
+    const count = config.board.gridCols * config.board.gridRows;
+    for (let i = 0; i < count; i += 1) {
+      const cell = board.getChildByName(`Cell${i}`);
       const pos = tokenPosition(config, { id: '', type: '', level: 1, place: 'grid', slot: i });
-      cell.setPosition(pos.x, pos.y, 0);
-      paintCell(cell.addComponent(Graphics), cellW - 8, cellH - 8, false);
+      cell?.setPosition(pos.x, pos.y, 0);
     }
     for (let i = 0; i < config.board.benchSlots; i += 1) {
-      const slot = inkNode(`Bench${i}`, 74, 74);
-      board.addChild(slot);
+      const slot = board.getChildByName(`Bench${i}`);
       const pos = tokenPosition(config, { id: '', type: '', level: 1, place: 'bench', slot: i });
-      slot.setPosition(pos.x, pos.y, 0);
-      paintCell(slot.addComponent(Graphics), 70, 70, true);
+      slot?.setPosition(pos.x, pos.y, 0);
     }
-
     const gate = config.board.path[config.board.path.length - 1];
-    const adou = inkNode('AdouSeal', 88, 88);
-    board.addChild(adou);
-    adou.setPosition(gate.x, gate.y, 0);
-    paintSeal(adou.addComponent(Graphics), Ink.cinnabar, 2, 36);
-    addLabel(adou, 'Glyph', '斗', 40, inkColor(Ink.cinnabar), 72, 56).node.setPosition(0, 2, 0);
-
-    this.rangeNode = inkNode('Range', 8, 8);
-    board.addChild(this.rangeNode);
-    this.rangeGraphics = this.rangeNode.addComponent(Graphics);
-    this.rangeNode.active = false;
-
-    this.titleLabel = addLabel(hud, 'Title', '墨卫', 40, inkColor(Ink.ink), 220, 56);
-    this.titleLabel.node.setPosition(-220, 598, 0);
-    this.speedLabel = this.makeSpeedButton(hud);
-    this.waveLabel = addLabel(hud, 'Wave', '', 22, inkColor(Ink.brown), 640, 36);
-    this.waveLabel.node.setPosition(0, 548, 0);
-    this.hpLabel = addLabel(hud, 'HpText', '', 22, inkColor(Ink.brown), 640, 32);
-    this.hpLabel.node.setPosition(0, 504, 0);
-    const bar = inkNode('HpBar', 460, 22);
-    hud.addChild(bar);
-    bar.setPosition(0, 470, 0);
-    this.hpGraphics = bar.addComponent(Graphics);
-
-    this.mantouLabel = addLabel(hud, 'Mantou', '', 26, inkColor(Ink.brown), 340, 48);
-    this.mantouLabel.node.setPosition(-150, 412, 0);
-    this.makeRecruitButton(hud);
-
-    this.hintLabel = addLabel(hud, 'Hint', HINT, 20, inkColor(Ink.brown), 680, 56);
-    this.hintLabel.node.setPosition(0, -590, 0);
-
-    this.bannerNode = inkNode('Banner', 360, 72);
-    hud.addChild(this.bannerNode);
-    this.bannerNode.setPosition(0, 200, 0);
-    paintCell(this.bannerNode.addComponent(Graphics), 340, 64, false);
-    this.bannerLabel = addLabel(this.bannerNode, 'BannerText', '', 36, inkColor(Ink.cinnabar), 320, 60);
-    this.bannerNode.active = false;
-
-    this.buildOverlay(hud, config);
+    this.adouSeal?.setPosition(gate.x, gate.y, 0);
+    if (this.rangeNode) {
+      this.rangeNode.active = false;
+    }
   }
 
-  private makeSpeedButton(hud: Node): Label {
-    const node = inkNode('Speed', 120, 44);
-    hud.addChild(node);
-    node.setPosition(250, 598, 0);
-    paintButton(node.addComponent(Graphics), 120, 44, true);
-    const label = addLabel(node, 'SpeedText', '常速', 20, inkColor('#fff8ea'), 110, 40);
-    node.on(Node.EventType.TOUCH_END, () => this.onSpeed(), this);
-    node.on(Node.EventType.MOUSE_UP, () => this.onSpeed(), this);
-    return label;
+  private layoutHpFill(): void {
+    const fill = this.hpFill?.node;
+    const parent = fill?.parent?.getComponent(UITransform);
+    const ui = fill?.getComponent(UITransform);
+    if (!fill || !parent || !ui) {
+      return;
+    }
+    const width = Math.max(8, parent.contentSize.width - 8);
+    this.hpFillWidth = width;
+    ui.setAnchorPoint(0, 0.5);
+    ui.setContentSize(width, Math.max(8, parent.contentSize.height - 6));
+    fill.setPosition(-width / 2, 0, 0);
   }
 
-  private makeRecruitButton(hud: Node): void {
-    const node = inkNode('Recruit', 176, 64);
-    hud.addChild(node);
-    node.setPosition(190, 412, 0);
-    this.recruitGraphics = node.addComponent(Graphics);
-    paintButton(this.recruitGraphics, 176, 64, true);
-    this.recruitLabel = addLabel(node, 'RecruitText', '招募', 24, inkColor('#fff8ea'), 160, 52);
-    node.on(Node.EventType.TOUCH_END, () => this.onRecruit(), this);
-    node.on(Node.EventType.MOUSE_UP, () => this.onRecruit(), this);
+  private collectMarks(): void {
+    this.slotMarks = [];
+    const board = this.boardLayer;
+    const config = this.config;
+    if (!board || !config) {
+      return;
+    }
+    const gridCount = config.board.gridCols * config.board.gridRows;
+    for (let i = 0; i < gridCount; i += 1) {
+      this.takeMark('grid', i, board.getChildByName(`Cell${i}`));
+    }
+    for (let i = 0; i < config.board.benchSlots; i += 1) {
+      this.takeMark('bench', i, board.getChildByName(`Bench${i}`));
+    }
   }
 
-  private buildOverlay(hud: Node, config: GameConfig): void {
-    const overlay = inkNode('Overlay', config.board.designWidth, config.board.designHeight);
-    hud.addChild(overlay);
-    const dim = overlay.addComponent(Graphics);
-    dim.fillColor = inkColor('#1d2b38', 150);
-    dim.rect(-config.board.designWidth / 2, -config.board.designHeight / 2, config.board.designWidth, config.board.designHeight);
-    dim.fill();
-    const card = inkNode('Card', 520, 360);
-    overlay.addChild(card);
-    paintCell(card.addComponent(Graphics), 520, 340, false);
-    this.overlayTitle = addLabel(card, 'ResultTitle', '', 40, inkColor(Ink.ink), 460, 64);
-    this.overlayTitle.node.setPosition(0, 90, 0);
-    this.overlayBody = addLabel(card, 'ResultBody', '', 22, inkColor(Ink.brown), 440, 120);
-    this.overlayBody.node.setPosition(0, 10, 0);
-    const button = inkNode('Restart', 220, 64);
-    card.addChild(button);
-    button.setPosition(0, -110, 0);
-    paintButton(button.addComponent(Graphics), 220, 64, true);
-    addLabel(button, 'RestartText', '再守一阵', 24, inkColor('#fff8ea'), 200, 52);
-    button.on(Node.EventType.TOUCH_END, () => this.restart(), this);
-    button.on(Node.EventType.MOUSE_UP, () => this.restart(), this);
-    overlay.active = false;
-    this.overlay = overlay;
+  private takeMark(place: Place, slot: number, cell: Node | null): void {
+    const node = cell?.getChildByName('Mark') ?? null;
+    const sprite = node?.getComponent(Sprite) ?? null;
+    if (!node || !sprite) {
+      return;
+    }
+    node.active = false;
+    this.slotMarks.push({ place, slot, node, sprite });
+  }
+
+  private guideSeen(): boolean {
+    try {
+      return sys.localStorage.getItem(GUIDE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  private grantGuide(): void {
+    this.sim?.placeGuideToken('dao', 'bench', 0);
+    this.sim?.placeGuideToken('dao', 'bench', 1);
+  }
+
+  private completeGuide(): void {
+    this.guidePending = false;
+    if (this.tutorialNode) {
+      this.tutorialNode.active = false;
+    }
+    try {
+      sys.localStorage.setItem(GUIDE_KEY, '1');
+    } catch {
+      /* this run still hides the card */
+    }
   }
 
   private bindInput(): void {
@@ -354,28 +446,6 @@ export class GameApp extends Component {
     return true;
   }
 
-  private onRecruit(): void {
-    if (!this.sim || this.sim.phase !== 'playing' || !this.claimUi()) {
-      return;
-    }
-    const result = this.sim.recruit();
-    if (!result.ok) {
-      this.showToast(result.reason === 'broke' ? '馒头不够' : '席位已满');
-    }
-    this.syncTokens();
-    this.syncHud();
-  }
-
-  private onSpeed(): void {
-    if (!this.claimUi()) {
-      return;
-    }
-    this.timeScale = this.timeScale === 1 ? 3 : 1;
-    if (this.speedLabel) {
-      this.speedLabel.string = this.timeScale === 1 ? '常速' : '三倍';
-    }
-  }
-
   private beginDrag(id: string, event: PointerEvent): void {
     if (!this.sim || this.sim.phase !== 'playing' || this.pointerDown) {
       return;
@@ -389,13 +459,14 @@ export class GameApp extends Component {
     this.dragId = id;
     this.dragTouch = typeof event.getID === 'function' ? event.getID() : -1;
     this.dragPos = this.readPointer(event);
-    viewToken.root.setScale(1.12, 1.12, 1);
+    viewToken.root.setScale(1.08, 1.08, 1);
     viewToken.root.setSiblingIndex(999);
     viewToken.root.setPosition(this.dragPos.x, this.dragPos.y, 0);
     const stat = this.sim.statOf(token.type, token.level);
     paintRange(this.rangeGraphics, stat.range, this.sim.config.units.types[token.type].ink);
     this.rangeNode.active = true;
     this.rangeNode.setPosition(this.dragPos.x, this.dragPos.y, 0);
+    this.updateMarks(id, this.dragPos.x, this.dragPos.y);
   }
 
   private onPointerMove(event: PointerEvent): void {
@@ -412,6 +483,7 @@ export class GameApp extends Component {
       viewToken.root.setPosition(this.dragPos.x, this.dragPos.y, 0);
     }
     this.rangeNode?.setPosition(this.dragPos.x, this.dragPos.y, 0);
+    this.updateMarks(this.dragId, this.dragPos.x, this.dragPos.y);
   }
 
   private onPointerEnd(event: PointerEvent): void {
@@ -431,15 +503,51 @@ export class GameApp extends Component {
     if (this.rangeNode) {
       this.rangeNode.active = false;
     }
+    this.clearMarks();
     const viewToken = this.tokenViews.get(tokenId);
     if (viewToken) {
       viewToken.root.setScale(1, 1, 1);
     }
     const result = this.resolveDrop(tokenId, this.dragPos.x, this.dragPos.y);
     if (!result.ok) {
-      this.showToast(result.reason === 'max-level' ? '已是最高品' : '字令或品级不同，合不了');
+      this.showToast(result.reason === 'max-level' ? '已是最高品' : '这里放不下');
     }
     this.syncTokens();
+  }
+
+  private updateMarks(tokenId: string, x: number, y: number): void {
+    if (!this.sim) {
+      return;
+    }
+    let nearest: SlotMark | null = null;
+    let nearestD = 78;
+    for (const mark of this.slotMarks) {
+      const kind = this.sim.previewDrop(tokenId, mark.place, mark.slot);
+      const show = kind === 'move' || kind === 'merge' || kind === 'swap';
+      mark.node.active = show;
+      if (!show) {
+        continue;
+      }
+      mark.sprite.color = inkColor(MARK_COLOR[kind]);
+      mark.node.setScale(1, 1, 1);
+      const parent = mark.node.parent;
+      if (!parent) {
+        continue;
+      }
+      const distance = Math.hypot(parent.position.x - x, parent.position.y - y);
+      if (distance < nearestD) {
+        nearestD = distance;
+        nearest = mark;
+      }
+    }
+    nearest?.node.setScale(1.12, 1.12, 1);
+  }
+
+  private clearMarks(): void {
+    for (const mark of this.slotMarks) {
+      mark.node.active = false;
+      mark.node.setScale(1, 1, 1);
+    }
   }
 
   private resolveDrop(id: string, x: number, y: number): DropResult {
@@ -447,26 +555,26 @@ export class GameApp extends Component {
       return { ok: true, action: 'stay' };
     }
     let best: Token | null = null;
-    let bestD = 56;
+    let bestD = 52;
     for (const token of this.sim.tokens) {
       if (token.id === id) {
         continue;
       }
       const pos = tokenPosition(this.config, token);
-      const d = Math.hypot(pos.x - x, pos.y - y);
-      if (d <= bestD) {
-        bestD = d;
+      const distance = Math.hypot(pos.x - x, pos.y - y);
+      if (distance <= bestD) {
+        bestD = distance;
         best = token;
       }
     }
     if (best) {
       return this.sim.drop(id, best.place, best.slot);
     }
-    const grid = nearestIndex(this.config.board, 'grid', x, y, 64);
+    const grid = nearestIndex(this.config.board, 'grid', x, y, 58);
     if (grid >= 0) {
       return this.sim.drop(id, 'grid', grid);
     }
-    const bench = nearestIndex(this.config.board, 'bench', x, y, 48);
+    const bench = nearestIndex(this.config.board, 'bench', x, y, 46);
     if (bench >= 0) {
       return this.sim.drop(id, 'bench', bench);
     }
@@ -515,7 +623,6 @@ export class GameApp extends Component {
       if (viewToken.shownLevel !== token.level) {
         viewToken.shownLevel = token.level;
         viewToken.rank.string = `${RANK[token.level] ?? token.level}品`;
-        paintSeal(viewToken.graphics, this.config.units.types[token.type].ink, token.level, 40);
       }
       if (this.dragId !== token.id) {
         const pos = tokenPosition(this.config, token);
@@ -527,17 +634,33 @@ export class GameApp extends Component {
 
   private createToken(token: Token): TokenView {
     const type = this.config!.units.types[token.type];
-    const root = inkNode(`Token-${token.id}`, 96, 96);
+    const root = this.actorNode(`Token-${token.id}`, 108, 108);
     this.actorLayer!.addChild(root);
-    const graphics = root.addComponent(Graphics);
-    paintSeal(graphics, type.ink, token.level, 40);
-    const glyph = addLabel(root, 'Glyph', type.glyph, 52, inkColor(type.ink), 84, 64);
-    glyph.node.setPosition(0, 8, 0);
-    const rank = addLabel(root, 'Rank', `${RANK[token.level] ?? token.level}品`, 18, inkColor(Ink.brown), 80, 28);
-    rank.node.setPosition(0, -28, 0);
+    const sprite = root.addComponent(Sprite);
+    sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+    sprite.type = Sprite.Type.SIMPLE;
+    const frame = this.frameFor(token.type);
+    if (frame) {
+      sprite.spriteFrame = frame;
+    }
+    const ui = root.getComponent(UITransform);
+    ui?.setContentSize(108, 108);
+    if (!frame) {
+      this.addText(root, type.glyph, 48, inkColor(type.ink), this.titleFont, 96, 72).node.setPosition(0, 8, 0);
+    }
+    const rank = this.addText(root, `${RANK[token.level] ?? token.level}品`, 18, inkColor(Ink.brown), this.bodyFont, 88, 28);
+    rank.node.setPosition(0, -46, 0);
     root.on(Node.EventType.TOUCH_START, (event: EventTouch) => this.beginDrag(token.id, event), this);
     root.on(Node.EventType.MOUSE_DOWN, (event: EventMouse) => this.beginDrag(token.id, event), this);
-    return { id: token.id, root, glyph, rank, graphics, shownLevel: token.level };
+    return { id: token.id, root, rank, shownLevel: token.level };
+  }
+
+  private frameFor(type: string): SpriteFrame | null {
+    const index = UNIT_ORDER.indexOf(type as (typeof UNIT_ORDER)[number]);
+    if (index < 0) {
+      return null;
+    }
+    return this.unitFrames[index] ?? null;
   }
 
   private syncEnemies(): void {
@@ -554,12 +677,16 @@ export class GameApp extends Component {
     this.sim.enemies.forEach((enemy, index) => {
       let viewEnemy = this.enemyViews.get(enemy.id);
       if (!viewEnemy) {
-        const root = inkNode(`Enemy-${enemy.id}`, 52, 64);
+        const root = this.actorNode(`Enemy-${enemy.id}`, 64, 64);
         this.actorLayer!.addChild(root);
-        paintEnemy(root.addComponent(Graphics));
-        addLabel(root, 'Mark', '寇', 22, inkColor('#f4efe4'), 40, 30).node.setPosition(0, 2, 0);
-        const hp = addLabel(root, 'Hp', '', 14, inkColor('#f4efe4'), 48, 20);
-        hp.node.setPosition(0, -24, 0);
+        const sprite = root.addComponent(Sprite);
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        sprite.spriteFrame = this.enemyFrame;
+        const ui = root.getComponent(UITransform);
+        ui?.setContentSize(64, 64);
+        this.addText(root, '寇', 22, inkColor('#f7f1e4'), this.titleFont, 48, 32).node.setPosition(0, 6, 0);
+        const hp = this.addText(root, '', 16, inkColor('#f4efe4'), this.bodyFont, 56, 22);
+        hp.node.setPosition(0, -36, 0);
         viewEnemy = { root, hp, shownHp: -1 };
         this.enemyViews.set(enemy.id, viewEnemy);
       }
@@ -587,9 +714,14 @@ export class GameApp extends Component {
     for (const shot of this.sim.shots) {
       let node = this.shotViews.get(shot.id);
       if (!node) {
-        node = inkNode(`Shot-${shot.id}`, 16, 16);
+        node = this.actorNode(`Shot-${shot.id}`, 22, 22);
         this.actorLayer.addChild(node);
-        paintShot(node.addComponent(Graphics), shot.ink);
+        const sprite = node.addComponent(Sprite);
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        sprite.spriteFrame = this.shotFrame;
+        sprite.color = inkColor(shot.ink);
+        const ui = node.getComponent(UITransform);
+        ui?.setContentSize(22, 22);
         this.shotViews.set(shot.id, node);
       }
       node.setPosition(shot.x, shot.y, 0);
@@ -610,13 +742,12 @@ export class GameApp extends Component {
     for (const floater of this.sim.floats) {
       let viewFloat = this.floatViews.get(floater.id);
       if (!viewFloat) {
-        const node = inkNode(`Float-${floater.id}`, 80, 32);
+        const node = this.actorNode(`Float-${floater.id}`, 80, 32);
         this.hudLayer.addChild(node);
-        const label = addLabel(node, 'Text', floater.text, 20, inkColor(Ink.cinnabar), 80, 32);
-        const opacity = node.addComponent(UIOpacity);
+        const label = this.addText(node, floater.text, 20, inkColor(Ink.cinnabar), this.bodyFont, 80, 32);
+        node.addComponent(UIOpacity);
         viewFloat = { node, label };
         this.floatViews.set(floater.id, viewFloat);
-        opacity.opacity = 255;
       }
       viewFloat.node.setPosition(floater.x, floater.y + floater.age * 46, 0);
       const opacity = viewFloat.node.getComponent(UIOpacity);
@@ -630,14 +761,21 @@ export class GameApp extends Component {
     if (!this.sim || !this.config) {
       return;
     }
+    if (this.guidePending && this.sim.mergeCount > 0) {
+      this.completeGuide();
+    }
     const hp = Math.max(0, Math.round(this.sim.adouHp));
     const maxHp = this.config.adou.maxHp;
     if (this.hpLabel) {
       this.hpLabel.string = `阿斗 ${hp}/${maxHp}`;
     }
-    if (this.hpGraphics && hp !== this.shownHp) {
+    if (this.hpFill && hp !== this.shownHp) {
       this.shownHp = hp;
-      paintBar(this.hpGraphics, 460, 22, maxHp <= 0 ? 0 : hp / maxHp);
+      const ui = this.hpFill.node.getComponent(UITransform);
+      const ratio = maxHp <= 0 ? 0 : hp / maxHp;
+      if (ui) {
+        ui.setContentSize(Math.max(0, this.hpFillWidth * ratio), ui.contentSize.height);
+      }
     }
     if (this.mantouLabel) {
       const income = this.config.economy.incomePerSecond;
@@ -658,12 +796,16 @@ export class GameApp extends Component {
     if (this.recruitLabel) {
       this.recruitLabel.string = `招募 ${cost}`;
     }
-    if (this.recruitGraphics && canRecruit !== this.recruitEnabled) {
+    if (this.recruitSprite && canRecruit !== this.recruitEnabled) {
       this.recruitEnabled = canRecruit;
-      paintButton(this.recruitGraphics, 176, 64, canRecruit);
+      const frame = canRecruit ? this.btnCinnabar : this.btnMuted;
+      if (frame) {
+        this.recruitSprite.spriteFrame = frame;
+      }
     }
     if (this.hintLabel) {
-      this.hintLabel.string = this.toastTimer > 0 ? this.toast : HINT;
+      const idle = this.guidePending ? GUIDE_HINT : HINT;
+      this.hintLabel.string = this.toastTimer > 0 ? this.toast : idle;
       this.hintLabel.color = this.toastTimer > 0 ? inkColor(Ink.cinnabar) : inkColor(Ink.brown);
     }
     if (this.bannerNode && this.bannerLabel) {
@@ -676,9 +818,6 @@ export class GameApp extends Component {
     if (this.overlay) {
       const ended = this.sim.phase !== 'playing';
       this.overlay.active = ended;
-      if (ended) {
-        this.overlay.setSiblingIndex(999);
-      }
       if (ended && this.overlayPhase !== this.sim.phase && this.overlayTitle && this.overlayBody) {
         this.overlayPhase = this.sim.phase;
         if (this.sim.phase === 'win') {
@@ -707,6 +846,7 @@ export class GameApp extends Component {
     if (this.rangeNode) {
       this.rangeNode.active = false;
     }
+    this.clearMarks();
     this.timeScale = 1;
     if (this.speedLabel) {
       this.speedLabel.string = '常速';
@@ -714,8 +854,15 @@ export class GameApp extends Component {
     this.toastTimer = 0;
     this.overlayPhase = 'playing';
     this.shownHp = -1;
+    this.recruitEnabled = true;
     this.sim.reset(Date.now() % 2147483647);
     this.clearDynamics();
+    if (this.guidePending) {
+      this.grantGuide();
+      if (this.tutorialNode) {
+        this.tutorialNode.active = true;
+      }
+    }
     if (this.overlay) {
       this.overlay.active = false;
     }
@@ -739,5 +886,35 @@ export class GameApp extends Component {
     this.enemyViews.clear();
     this.shotViews.clear();
     this.floatViews.clear();
+  }
+
+  private actorNode(name: string, width: number, height: number): Node {
+    const node = new Node(name);
+    node.layer = this.node.layer;
+    const transform = node.addComponent(UITransform);
+    transform.setContentSize(width, height);
+    transform.setAnchorPoint(0.5, 0.5);
+    return node;
+  }
+
+  private addText(parent: Node, text: string, size: number, color: Color, font: Font | null, width: number, height: number): Label {
+    const node = this.actorNode('Text', width, height);
+    parent.addChild(node);
+    const label = node.addComponent(Label);
+    label.string = text;
+    label.fontSize = size;
+    label.lineHeight = size + 6;
+    label.horizontalAlign = HorizontalTextAlignment.CENTER;
+    label.verticalAlign = VerticalTextAlignment.CENTER;
+    label.overflow = Overflow.SHRINK;
+    label.color = color;
+    if (font) {
+      label.font = font;
+      label.useSystemFont = false;
+    } else {
+      label.useSystemFont = true;
+      label.fontFamily = 'sans-serif';
+    }
+    return label;
   }
 }

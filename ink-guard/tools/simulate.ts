@@ -7,7 +7,7 @@ import type { GameConfig } from '../assets/scripts/config/ConfigTypes';
 import { normalizeConfig } from '../assets/scripts/config/validateConfig';
 import type { Token } from '../assets/scripts/logic/GameSim';
 import { GameSim } from '../assets/scripts/logic/GameSim';
-import { gridPosition } from '../assets/scripts/logic/geometry';
+import { buildPath, gridPosition, pointOnPath } from '../assets/scripts/logic/geometry';
 
 declare function require(name: string): {
   readFileSync(path: string, encoding: 'utf8'): string;
@@ -211,8 +211,23 @@ function ruleTests(raw: Record<string, unknown>): void {
   const dao = mixed.tokens[0];
   const qi = other.tokens[0];
   mixed.tokens.push({ ...qi, id: 'foreign', slot: 1 });
-  const mismatch = mixed.drop('foreign', 'bench', dao.slot);
-  check(!mismatch.ok && mismatch.reason === 'mismatch', 'different tokens do not merge');
+  const daoSlot = dao.slot;
+  const swapped = mixed.drop('foreign', 'bench', daoSlot);
+  check(swapped.ok && swapped.action === 'swap', 'different tokens swap places');
+  const swappedDao = mixed.tokens.find((token) => token.id === dao.id);
+  const swappedQi = mixed.tokens.find((token) => token.id === 'foreign');
+  check(
+    swappedDao?.slot === 1 && swappedQi?.slot === daoSlot && swappedDao.level === 1 && swappedQi?.level === 1,
+    'swap exchanges slots and keeps both levels',
+  );
+  check(mixed.previewDrop('foreign', 'bench', swappedDao?.slot ?? -1) === 'swap', 'preview matches a cross-type drop');
+
+  const ranked = new GameSim(config, () => 0);
+  ranked.recruit();
+  ranked.recruit();
+  ranked.tokens[1].level = 2;
+  const rankedSwap = ranked.drop(ranked.tokens[1].id, 'bench', ranked.tokens[0].slot);
+  check(rankedSwap.ok && rankedSwap.action === 'swap', 'same token at a different level swaps instead of merging');
 
   const capped = new GameSim(config, () => 0);
   capped.recruit();
@@ -276,6 +291,31 @@ function ruleTests(raw: Record<string, unknown>): void {
     kill.tick(1 / 60);
   }
   check(kill.phase === 'win' && kill.killCount === 1 && kill.leakCount === 0, 'a deployed token can clear an enemy before it reaches Adou');
+
+  check(config.waves.firstDelay >= 10, 'opening prep leaves time to recruit and merge');
+  const backCenter = gridPosition(config.board, config.board.gridCols * 2 + 2);
+  const backCorner = gridPosition(config.board, config.board.gridCols * 2);
+  const midCenter = gridPosition(config.board, config.board.gridCols + 2);
+  const backD = distanceToPath(config.board.path, backCenter.x, backCenter.y);
+  const cornerD = distanceToPath(config.board.path, backCorner.x, backCorner.y);
+  const midD = distanceToPath(config.board.path, midCenter.x, midCenter.y);
+  const dao1 = config.units.types.dao.byLevel[1].range;
+  const dao2 = config.units.types.dao.byLevel[2].range;
+  check(config.units.types.gong.byLevel[1].range >= cornerD, 'back-row corners sit inside bow level-1 range');
+  check(config.units.types.qiang.byLevel[1].range >= cornerD, 'back-row corners sit inside spear level-1 range');
+  check(dao1 >= midD && dao1 < backD, 'level-1 blade reaches the middle row and still needs a merge for the back row');
+  check(dao2 >= backD, 'blade reaches the back row after one merge');
+}
+
+function distanceToPath(points: Array<{ x: number; y: number }>, x: number, y: number): number {
+  const path = buildPath(points);
+  let best = Infinity;
+  const steps = Math.max(1, Math.ceil(path.total / 3));
+  for (let i = 0; i <= steps; i += 1) {
+    const point = pointOnPath(path, (path.total * i) / steps);
+    best = Math.min(best, Math.hypot(point.x - x, point.y - y));
+  }
+  return best;
 }
 
 function scenarioTests(config: GameConfig): void {
