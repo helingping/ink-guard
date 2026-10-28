@@ -16,7 +16,7 @@
 
 ## 用 Cocos Creator 3.8 打开
 
-1. 安装 Cocos Creator **3.8.x**。工程在 `package.json` 里标的是 3.8.6，3.8 系列可以直接开；若编辑器提示升级资源，按提示迁移即可。
+1. 安装 Cocos Creator **3.8.8**。工程在 `package.json` 里标的是 3.8.8；若编辑器提示升级资源，按提示迁移即可。
 2. 在 Creator 启动器里打开 **`ink-guard` 这个文件夹**，不要打开仓库根目录。
 3. 等资源导入和脚本编译结束（右下角进度走完，控制台没有红色报错）。
 4. 在资源管理器双击 `assets/scenes/main.scene`。
