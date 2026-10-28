@@ -145,27 +145,31 @@ function knockOutBlack(image) {
   if (!image) {
     return null;
   }
-  const surface = document.createElement('canvas');
-  surface.width = image.naturalWidth || image.width;
-  surface.height = image.naturalHeight || image.height;
-  const g = surface.getContext('2d', { willReadFrequently: true });
-  g.drawImage(image, 0, 0);
-  const corner = g.getImageData(0, 0, 1, 1).data;
-  if (corner[0] > 28 || corner[1] > 28 || corner[2] > 28) {
-    return image;
-  }
-  const pixels = g.getImageData(0, 0, surface.width, surface.height);
-  const data = pixels.data;
-  for (let i = 0; i < data.length; i += 4) {
-    const max = Math.max(data[i], data[i + 1], data[i + 2]);
-    if (max < 22) {
-      data[i + 3] = 0;
-    } else if (max < 64) {
-      data[i + 3] = Math.min(data[i + 3], Math.floor(((max - 22) * 255) / 42));
+  try {
+    const surface = document.createElement('canvas');
+    surface.width = image.naturalWidth || image.width;
+    surface.height = image.naturalHeight || image.height;
+    const g = surface.getContext('2d', { willReadFrequently: true });
+    g.drawImage(image, 0, 0);
+    const corner = g.getImageData(0, 0, 1, 1).data;
+    if (corner[0] > 28 || corner[1] > 28 || corner[2] > 28) {
+      return image;
     }
+    const pixels = g.getImageData(0, 0, surface.width, surface.height);
+    const data = pixels.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const max = Math.max(data[i], data[i + 1], data[i + 2]);
+      if (max < 22) {
+        data[i + 3] = 0;
+      } else if (max < 64) {
+        data[i + 3] = Math.min(data[i + 3], Math.floor(((max - 22) * 255) / 42));
+      }
+    }
+    g.putImageData(pixels, 0, 0);
+    return surface;
+  } catch {
+    return null;
   }
-  g.putImageData(pixels, 0, 0);
-  return surface;
 }
 
 async function loadArt() {
@@ -179,7 +183,7 @@ async function loadArt() {
   art.paper = paper;
   art.mountain = mountain;
   art.cell = cell;
-  art.seal = knockOutBlack(seal);
+  art.seal = seal;
   art.arrow = knockOutBlack(arrow);
   await Promise.all(
     config.units.order.map(async (id) => {
@@ -492,7 +496,12 @@ function drawSeal() {
   ctx.fillStyle = 'rgba(141, 46, 42, 0.12)';
   ctx.fill();
   if (art.seal) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(screen.x, screen.y, 32, 0, Math.PI * 2);
+    ctx.clip();
     ctx.drawImage(art.seal, screen.x - 32, screen.y - 32, 64, 64);
+    ctx.restore();
   } else {
     ctx.fillStyle = '#f4efe4';
     ctx.beginPath();

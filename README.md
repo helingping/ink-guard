@@ -7,7 +7,13 @@
 
 Cocos Creator 的场景和 web-mobile 出包都要编辑器。没有 Creator 时，用 `web-preview/` 里的 Canvas 竖屏页，手机浏览器就能玩。招募、合成、上阵、守波的数值读 `ink-guard/assets/resources/configs/`（旁边的 `web-preview/configs/` 是同一份拷贝，父路径读不到时才用）。
 
-公开地址（GitHub Pages 发布仓库根目录）：
+现在就能用手机打开（第一次会先出现 raw.githack 的 “Open the page”，点一下进游戏）：
+
+https://raw.githack.com/helingping/ink-guard/cursor/h5-web-preview-232e/web-preview/
+
+合并进 `main` 之后，把地址里的分支名换成 `main`。
+
+GitHub Pages 打开之后，地址是：
 
 - https://helingping.github.io/ink-guard/
 - https://helingping.github.io/ink-guard/web-preview/
@@ -18,7 +24,7 @@ Cocos Creator 的场景和 web-mobile 出包都要编辑器。没有 Creator 时
 
 仓库是公开的。`.github/workflows/pages.yml` 用 GitHub Actions 发布整仓，入口是根目录的 `index.html`，它会跳到 `web-preview/`。仓库根上有 `.nojekyll`，避免 Jekyll 改写静态文件。
 
-还没开过 Pages 时：
+本仓库的 Actions 令牌没有创建 Pages 站点的权限（接口返回 403）。需要仓库管理员打开一次。还没开过 Pages 时：
 
 ```bash
 gh api --method POST repos/helingping/ink-guard/pages -f build_type=workflow
