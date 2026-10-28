@@ -1,0 +1,5 @@
+{
+  "comment": "Adou is the ward. The round ends when maxHp is depleted.",
+  "name": "Adou",
+  "maxHp": 24
+}

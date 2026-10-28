@@ -1,0 +1,9 @@
+{
+  "comment": "Recruit cost = recruitCostBase + recruitCostGrowth * successfulRecruitCount. Income keeps the loop from stalling; there is no real-money shop.",
+  "startMantou": 140,
+  "recruitCostBase": 15,
+  "recruitCostGrowth": 5,
+  "incomePerSecond": 5,
+  "killReward": 2,
+  "waveClearBonus": 16
+}

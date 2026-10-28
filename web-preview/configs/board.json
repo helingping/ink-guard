@@ -1,0 +1,24 @@
+{
+  "comment": "Canvas-center pixel space, +y up. Ranges in units.json are distances in this space. The river sits just above the 5x3 grid so the back row is not a dead zone. HUD occupies roughly y>380; the bench is near y=-360; the footer hint sits near y<-560.",
+  "designWidth": 720,
+  "designHeight": 1280,
+  "gridCols": 5,
+  "gridRows": 3,
+  "benchSlots": 8,
+  "cellSize": 78,
+  "cellGap": 8,
+  "gridOrigin": { "x": -172, "y": 40 },
+  "benchOrigin": { "x": -287, "y": -360 },
+  "benchStep": 82,
+  "path": [
+    { "x": -230, "y": 236 },
+    { "x": 180, "y": 196 },
+    { "x": -160, "y": 164 },
+    { "x": 140, "y": 140 },
+    { "x": -120, "y": 124 },
+    { "x": 120, "y": 124 },
+    { "x": 0, "y": 118 }
+  ],
+  "projectileSpeed": 920,
+  "hitRadius": 18
+}
