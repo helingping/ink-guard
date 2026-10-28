@@ -1,0 +1,12 @@
+library/
+temp/
+local/
+build/
+profiles/
+native/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
+*.tsbuildinfo

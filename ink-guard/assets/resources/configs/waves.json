@@ -1,0 +1,12 @@
+{
+  "comment": "Clear every wave while Adou still has HP to win. count is spawn count. speed is pixels per second. damage is dealt once when an enemy reaches the path end.",
+  "firstDelay": 4,
+  "gapSeconds": 4,
+  "waves": [
+    { "id": 1, "count": 6, "hp": 36, "speed": 48, "damage": 1, "interval": 1.25 },
+    { "id": 2, "count": 8, "hp": 64, "speed": 56, "damage": 1, "interval": 1.05 },
+    { "id": 3, "count": 8, "hp": 100, "speed": 64, "damage": 2, "interval": 0.95 },
+    { "id": 4, "count": 10, "hp": 140, "speed": 72, "damage": 2, "interval": 0.85 },
+    { "id": 5, "count": 12, "hp": 180, "speed": 78, "damage": 3, "interval": 0.75 }
+  ]
+}

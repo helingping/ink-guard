@@ -1,0 +1,22 @@
+{
+  "comment": "Canvas-center pixel space, +y up. Ranges in units.json are distances in this space. HUD occupies roughly y>380; the footer hint sits near y<-560.",
+  "designWidth": 720,
+  "designHeight": 1280,
+  "gridCols": 5,
+  "gridRows": 3,
+  "benchSlots": 8,
+  "cellSize": 100,
+  "cellGap": 10,
+  "gridOrigin": { "x": -220, "y": -36 },
+  "benchOrigin": { "x": -287, "y": -500 },
+  "benchStep": 82,
+  "path": [
+    { "x": -250, "y": 330 },
+    { "x": 240, "y": 255 },
+    { "x": -210, "y": 175 },
+    { "x": 200, "y": 110 },
+    { "x": 0, "y": 72 }
+  ],
+  "projectileSpeed": 920,
+  "hitRadius": 18
+}
