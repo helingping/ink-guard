@@ -12,6 +12,7 @@ import {
   Node,
   Overflow,
   ResolutionPolicy,
+  resources,
   Sprite,
   SpriteFrame,
   sys,
@@ -31,9 +32,31 @@ const { ccclass, property } = _decorator;
 
 interface TokenView {
   id: string;
+  typeId: string;
   root: Node;
+  body: Sprite;
   rank: Label;
+  idle: SpriteFrame | null;
+  poseFrames: SpriteFrame[];
+  poseTime: number;
+  poseDuration: number;
   shownLevel: number;
+}
+
+interface ShotView {
+  node: Node;
+  sprite: Sprite;
+  style: string;
+  typeId: string;
+  frames: SpriteFrame[];
+}
+
+interface BurstView {
+  node: Node;
+  sprite: Sprite;
+  frames: SpriteFrame[];
+  age: number;
+  life: number;
 }
 
 interface EnemyView {
@@ -172,7 +195,12 @@ export class GameApp extends Component {
   private slotMarks: SlotMark[] = [];
   private tokenViews = new Map<string, TokenView>();
   private enemyViews = new Map<string, EnemyView>();
-  private shotViews = new Map<string, Node>();
+  private shotViews = new Map<string, ShotView>();
+  private bursts: BurstView[] = [];
+  private poseFrames = new Map<string, SpriteFrame[]>();
+  private swingFrames = new Map<string, SpriteFrame[]>();
+  private arrowFrames = new Map<string, SpriteFrame>();
+  private lastDt = 0;
   private floatViews = new Map<string, { node: Node; label: Label }>();
 
   private pointerDown = false;
@@ -206,6 +234,7 @@ export class GameApp extends Component {
   }
 
   update(dt: number): void {
+    this.lastDt = dt;
     this.clock += dt;
     if (this.toastTimer > 0) {
       this.toastTimer = Math.max(0, this.toastTimer - dt);
@@ -303,8 +332,42 @@ export class GameApp extends Component {
     } else if (this.tutorialNode) {
       this.tutorialNode.active = false;
     }
+    void this.loadAttackArt(config);
     this.syncAll();
     console.log(`[InkGuard] ready, waves=${config.waves.waves.length}, adou=${config.adou.maxHp}`);
+  }
+
+  private loadFrame(base: string): Promise<SpriteFrame | null> {
+    const once = (path: string) => new Promise<SpriteFrame | null>((resolve) => {
+      resources.load(path, SpriteFrame, (err, asset) => {
+        resolve(!err && asset ? asset : null);
+      });
+    });
+    return once(`${base}/spriteFrame`).then((frame) => frame ?? once(base));
+  }
+
+  private async loadSequence(prefix: string, count: number): Promise<SpriteFrame[]> {
+    const frames = await Promise.all(Array.from({ length: count }, (_, index) => this.loadFrame(`${prefix}-${index}`)));
+    return frames.filter((frame): frame is SpriteFrame => frame !== null);
+  }
+
+  private async loadAttackArt(config: GameConfig): Promise<void> {
+    await Promise.all(config.units.order.map(async (id) => {
+      const poses = await this.loadSequence(`pose/${id}`, 4);
+      const swings = await this.loadSequence(`fx/${id}`, 4);
+      if (poses.length > 0) {
+        this.poseFrames.set(id, poses);
+      }
+      if (swings.length > 0) {
+        this.swingFrames.set(id, swings);
+      }
+      if (config.units.types[id].style === 'ranged') {
+        const arrow = await this.loadFrame(`fx/${id}-arrow`);
+        if (arrow) {
+          this.arrowFrames.set(id, arrow);
+        }
+      }
+    }));
   }
 
   private zeroHitbox(node: Node | null): void {
@@ -583,6 +646,7 @@ export class GameApp extends Component {
         viewToken.shownLevel = token.level;
         viewToken.rank.string = `${RANK[token.level] ?? token.level}品`;
       }
+      this.advancePose(viewToken);
       if (this.dragId !== token.id) {
         const pos = tokenPosition(this.config, token);
         viewToken.root.setPosition(pos.x, pos.y, 0);
@@ -609,6 +673,16 @@ export class GameApp extends Component {
     }
     const rank = this.addText(root, `${RANK[token.level] ?? token.level}品`, 18, inkColor(Ink.brown), this.bodyFont, 88, 28);
     rank.node.setPosition(0, -46, 0);
+    const style = this.addText(
+      root,
+      `${type.styleLabel}·${type.motionLabel}`,
+      14,
+      inkColor(type.ink),
+      this.bodyFont,
+      120,
+      22,
+    );
+    style.node.setPosition(0, 40, 0);
     // Creator 3.8 turns a mouse press into a touch and the node that receives
     // TOUCH_START claims that id. Later move/up events are delivered here and
     // swallowed before global input listeners, including when the cursor has
@@ -621,7 +695,48 @@ export class GameApp extends Component {
     root.on(Node.EventType.TOUCH_MOVE, onMove, this);
     root.on(Node.EventType.TOUCH_END, onEnd, this);
     root.on(Node.EventType.TOUCH_CANCEL, onEnd, this);
-    return { id: token.id, root, rank, shownLevel: token.level };
+    return {
+      id: token.id,
+      typeId: token.type,
+      root,
+      body: sprite,
+      rank,
+      idle: frame,
+      poseFrames: [],
+      poseTime: -1,
+      poseDuration: 0.34,
+      shownLevel: token.level,
+    };
+  }
+
+  private advancePose(viewToken: TokenView): void {
+    if (viewToken.poseTime < 0) {
+      return;
+    }
+    const frames = this.poseFrames.get(viewToken.typeId) ?? viewToken.poseFrames;
+    viewToken.poseFrames = frames;
+    viewToken.poseTime += this.lastDt;
+    if (frames.length === 0 || viewToken.poseTime >= viewToken.poseDuration) {
+      viewToken.poseTime = -1;
+      if (viewToken.idle) {
+        viewToken.body.spriteFrame = viewToken.idle;
+      }
+      return;
+    }
+    const index = Math.min(frames.length - 1, Math.floor((viewToken.poseTime / viewToken.poseDuration) * frames.length));
+    viewToken.body.spriteFrame = frames[index];
+  }
+
+  private startPose(tokenId: string, typeId: string): void {
+    const viewToken = this.tokenViews.get(tokenId);
+    const frames = this.poseFrames.get(typeId);
+    if (!viewToken || !frames || frames.length === 0) {
+      return;
+    }
+    viewToken.poseFrames = frames;
+    viewToken.poseTime = 0;
+    viewToken.poseDuration = 0.34;
+    viewToken.body.spriteFrame = frames[0];
   }
 
   private frameFor(type: string): SpriteFrame | null {
@@ -674,27 +789,94 @@ export class GameApp extends Component {
       return;
     }
     const alive = new Set(this.sim.shots.map((shot) => shot.id));
-    for (const [id, node] of this.shotViews) {
+    for (const [id, view] of this.shotViews) {
       if (!alive.has(id)) {
-        node.destroy();
+        if (view.style === 'ranged') {
+          this.spawnBurst(view.typeId, view.node.position.x, view.node.position.y);
+        }
+        view.node.destroy();
         this.shotViews.delete(id);
       }
     }
     for (const shot of this.sim.shots) {
-      let node = this.shotViews.get(shot.id);
-      if (!node) {
-        node = this.actorNode(`Shot-${shot.id}`, 22, 22);
-        this.actorLayer.addChild(node);
-        const sprite = node.addComponent(Sprite);
-        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
-        sprite.spriteFrame = this.shotFrame;
-        sprite.color = inkColor(shot.ink);
-        const ui = node.getComponent(UITransform);
-        ui?.setContentSize(22, 22);
-        this.shotViews.set(shot.id, node);
+      let view = this.shotViews.get(shot.id);
+      if (!view) {
+        view = this.createShotView(shot);
+        this.shotViews.set(shot.id, view);
+        this.startPose(shot.sourceId, shot.typeId);
       }
-      node.setPosition(shot.x, shot.y, 0);
+      view.node.setPosition(shot.x, shot.y, 0);
+      const dx = shot.x - shot.fromX;
+      const dy = shot.y - shot.fromY;
+      if (Math.hypot(dx, dy) > 4) {
+        view.node.angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+      }
+      const frames = view.frames;
+      if (shot.style === 'melee' && frames.length > 0) {
+        const t = Math.min(1, shot.age / Math.max(0.001, shot.strike));
+        const index = Math.min(frames.length - 1, Math.floor(t * frames.length));
+        view.sprite.spriteFrame = frames[index];
+        const scale = 0.75 + t * 0.45;
+        view.node.setScale(scale, scale, 1);
+      }
     }
+    this.advanceBursts();
+  }
+
+  private createShotView(shot: { id: string; style: string; typeId: string; ink: string }): ShotView {
+    const ranged = shot.style === 'ranged';
+    const node = this.actorNode(`Shot-${shot.id}`, ranged ? 72 : 150, ranged ? 36 : 150);
+    this.actorLayer!.addChild(node);
+    const sprite = node.addComponent(Sprite);
+    sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+    const arrow = this.arrowFrames.get(shot.typeId) ?? null;
+    const frames = this.swingFrames.get(shot.typeId) ?? [];
+    if (ranged && arrow) {
+      sprite.spriteFrame = arrow;
+    } else if (frames.length > 0) {
+      sprite.spriteFrame = frames[0];
+    } else if (this.shotFrame) {
+      sprite.spriteFrame = this.shotFrame;
+      sprite.color = inkColor(shot.ink);
+    }
+    const ui = node.getComponent(UITransform);
+    ui?.setContentSize(ranged ? 72 : 150, ranged ? 36 : 150);
+    return { node, sprite, style: shot.style, typeId: shot.typeId, frames };
+  }
+
+  private spawnBurst(typeId: string, x: number, y: number): void {
+    const frames = this.swingFrames.get(typeId) ?? [];
+    if (!this.actorLayer || frames.length === 0) {
+      return;
+    }
+    const node = this.actorNode(`Hit-${typeId}`, 120, 120);
+    this.actorLayer.addChild(node);
+    node.setPosition(x, y, 0);
+    const sprite = node.addComponent(Sprite);
+    sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+    sprite.spriteFrame = frames[0];
+    const ui = node.getComponent(UITransform);
+    ui?.setContentSize(120, 120);
+    this.bursts.push({ node, sprite, frames, age: 0, life: 0.32 });
+  }
+
+  private advanceBursts(): void {
+    const kept: BurstView[] = [];
+    for (const burst of this.bursts) {
+      burst.age += this.lastDt;
+      if (burst.age >= burst.life) {
+        burst.node.destroy();
+        continue;
+      }
+      const index = Math.min(burst.frames.length - 1, Math.floor((burst.age / burst.life) * burst.frames.length));
+      burst.sprite.spriteFrame = burst.frames[index];
+      const fade = 1 - burst.age / burst.life;
+      burst.node.setScale(0.8 + burst.age * 1.4, 0.8 + burst.age * 1.4, 1);
+      const opacity = burst.node.getComponent(UIOpacity) ?? burst.node.addComponent(UIOpacity);
+      opacity.opacity = Math.max(0, Math.floor(255 * fade));
+      kept.push(burst);
+    }
+    this.bursts = kept;
   }
 
   private syncFloats(): void {
@@ -845,8 +1027,11 @@ export class GameApp extends Component {
     for (const viewEnemy of this.enemyViews.values()) {
       viewEnemy.root.destroy();
     }
-    for (const node of this.shotViews.values()) {
-      node.destroy();
+    for (const view of this.shotViews.values()) {
+      view.node.destroy();
+    }
+    for (const burst of this.bursts) {
+      burst.node.destroy();
     }
     for (const viewFloat of this.floatViews.values()) {
       viewFloat.node.destroy();
@@ -854,6 +1039,7 @@ export class GameApp extends Component {
     this.tokenViews.clear();
     this.enemyViews.clear();
     this.shotViews.clear();
+    this.bursts = [];
     this.floatViews.clear();
   }
 

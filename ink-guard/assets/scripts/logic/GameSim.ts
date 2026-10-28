@@ -1,4 +1,4 @@
-import type { GameConfig, LevelStat, WaveDef } from '../config/ConfigTypes';
+import type { AttackStyle, GameConfig, LevelStat, WaveDef } from '../config/ConfigTypes';
 import { benchPosition, buildPath, gridPosition, pointOnPath, type Polyline } from './geometry';
 import { mulberry32 } from './rng';
 
@@ -29,9 +29,19 @@ export interface Shot {
   id: string;
   x: number;
   y: number;
+  fromX: number;
+  fromY: number;
   damage: number;
   targetId: string;
   ink: string;
+  typeId: string;
+  sourceId: string;
+  style: AttackStyle;
+  motion: string;
+  /** Melee windup in seconds. Ranged shots leave this at 0 and fly at `speed`. */
+  strike: number;
+  speed: number;
+  age: number;
 }
 
 export interface FloatText {
@@ -364,14 +374,24 @@ export class GameSim {
         this.cooldown.set(token.id, 0);
         continue;
       }
+      const type = this.config.units.types[token.type];
       this.cooldown.set(token.id, 1 / stat.aspd);
       this.shots.push({
         id: this.nextId('s'),
         x: origin.x,
         y: origin.y,
+        fromX: origin.x,
+        fromY: origin.y,
         damage: stat.atk,
         targetId: target.id,
-        ink: this.config.units.types[token.type].ink,
+        ink: type.ink,
+        typeId: token.type,
+        sourceId: token.id,
+        style: type.style,
+        motion: type.motion,
+        strike: type.style === 'melee' ? type.strike : 0,
+        speed: type.style === 'ranged' ? type.shotSpeed : 0,
+        age: 0,
       });
     }
     for (const id of this.cooldown.keys()) {
@@ -398,7 +418,6 @@ export class GameSim {
   }
 
   private tickShots(dt: number): void {
-    const speed = this.config.board.projectileSpeed;
     const hitRadius = this.config.board.hitRadius;
     const kept: Shot[] = [];
     for (const shot of this.shots) {
@@ -406,15 +425,29 @@ export class GameSim {
       if (!target) {
         continue;
       }
+      if (shot.style === 'melee') {
+        shot.age += dt;
+        const duration = Math.max(0.001, shot.strike);
+        const t = Math.min(1, shot.age / duration);
+        shot.x = shot.fromX + (target.x - shot.fromX) * t;
+        shot.y = shot.fromY + (target.y - shot.fromY) * t;
+        if (shot.age >= shot.strike) {
+          this.applyDamage(target, shot.damage);
+        } else {
+          kept.push(shot);
+        }
+        continue;
+      }
       const dx = target.x - shot.x;
       const dy = target.y - shot.y;
       const dist = Math.hypot(dx, dy);
-      const step = speed * dt;
+      const step = Math.max(0, shot.speed) * dt;
       if (dist <= step || dist <= hitRadius) {
         this.applyDamage(target, shot.damage);
       } else {
         shot.x += (dx / dist) * step;
         shot.y += (dy / dist) * step;
+        shot.age += dt;
         kept.push(shot);
       }
     }

@@ -1,5 +1,6 @@
 import type {
   AdouConfig,
+  AttackStyle,
   BoardConfig,
   BoardPoint,
   EconomyConfig,
@@ -105,13 +106,40 @@ function parseUnits(raw: unknown): UnitsConfig {
     if (!/^#[0-9a-fA-F]{6}$/.test(ink)) {
       fail(file, `${id} 的 ink 必须是 #RRGGBB`);
     }
+    const style = needString(entry, 'style', file);
+    if (style !== 'melee' && style !== 'ranged') {
+      fail(file, `${id} 的 style 只能是 melee 或 ranged`);
+    }
+    const motion = needString(entry, 'motion', file);
+    const strike = needNumber(entry, 'strike', file);
+    const shotSpeed = needNumber(entry, 'shotSpeed', file);
+    if (style === 'melee') {
+      if (strike <= 0 || strike > 1) {
+        fail(file, `${id} 的近战 strike 必须大于 0 且不超过 1 秒`);
+      }
+      if (shotSpeed !== 0) {
+        fail(file, `${id} 是近战，shotSpeed 必须是 0`);
+      }
+    } else if (shotSpeed <= 0 || strike !== 0) {
+      fail(file, `${id} 是远程，strike 必须是 0，shotSpeed 必须大于 0`);
+    }
     types[id] = {
       id,
       displayName: needString(entry, 'displayName', file),
       glyph: needString(entry, 'glyph', file),
       ink,
+      style: style as AttackStyle,
+      motion,
+      styleLabel: needString(entry, 'styleLabel', file),
+      motionLabel: needString(entry, 'motionLabel', file),
+      strike,
+      shotSpeed,
       byLevel,
     };
+  }
+  const motions = Object.values(types).map((type) => type.motion);
+  if (new Set(motions).size !== motions.length) {
+    fail(file, '每种字令的 motion 必须不同，攻击方式才能分开');
   }
   const extra = Object.keys(typesRaw).filter((id) => !order.includes(id));
   if (extra.length > 0) {

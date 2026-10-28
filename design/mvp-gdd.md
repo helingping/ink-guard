@@ -92,7 +92,7 @@
 
 ### `ink-guard/assets/resources/configs/units.json`
 
-`order` 决定招募抽签顺序，四项等概率。`aspd` 是每秒攻击次数。`range` 是像素射程。`ink` 是印章颜色。
+`order` 决定招募抽签顺序，四项等概率。`aspd` 是每秒攻击次数。`range` 是像素射程。`ink` 是印章颜色。`style` 是 `melee` 或 `ranged`：近战在 `strike` 秒后打中，不看弹道速度；远程以 `shotSpeed` 像素/秒飞出弹道。`motion` 每种字令各不相同，用来区分斩、刺、射、冲。
 
 | 字令 | 品 | atk | aspd | range |
 | --- | --- | --- | --- | --- |

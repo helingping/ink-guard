@@ -1,5 +1,7 @@
 /** Normalized runtime config. Raw JSON is validated in `validateConfig.ts`. */
 
+export type AttackStyle = 'melee' | 'ranged';
+
 export interface LevelStat {
   level: number;
   atk: number;
@@ -12,6 +14,16 @@ export interface UnitTypeConfig {
   displayName: string;
   glyph: string;
   ink: string;
+  /** melee connects at the end of `strike`; ranged fires a projectile at `shotSpeed`. */
+  style: AttackStyle;
+  /** Distinct delivery name. Each token in `order` must use a different one. */
+  motion: string;
+  styleLabel: string;
+  motionLabel: string;
+  /** Seconds from the swing until a melee hit. Zero for ranged. */
+  strike: number;
+  /** Pixels per second for a ranged shot. Zero for melee. */
+  shotSpeed: number;
   byLevel: LevelStat[];
 }
 

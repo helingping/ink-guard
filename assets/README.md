@@ -22,6 +22,8 @@
 | --- | --- |
 | `ink-guard/assets/concepts/` | 同上三张原稿，方便只打开 Creator 工程时也能看到 |
 | `ink-guard/assets/resources/textures/` | 棋盘格、阿斗印、河道、竹、山、字令、按钮、血条、落点环 |
+| `ink-guard/assets/resources/pose/` | 刀、枪、弓、骑各自的 4 帧攻击动作 |
+| `ink-guard/assets/resources/fx/` | 每种字令自己的 4 帧攻击特效，另有 `gong-arrow.png` |
 | `ink-guard/assets/resources/fonts/` | 马善政、Noto Sans CJK SC Regular，以及 OFL 许可 |
 
-切图脚本：`ink-guard/tools/export-ui-sprites.py`。
+切图脚本：`ink-guard/tools/export-ui-sprites.py`，攻击帧是 `ink-guard/tools/export-attack-frames.py`。
