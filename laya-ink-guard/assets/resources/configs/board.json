@@ -1,0 +1,57 @@
+{
+  "comment": "Canvas-center pixel space, +y up. Three lanes share the traced centerline of textures/river.png (placed at river) so foes walk the painted ford, then drop south to the seal. West rides the river from the west bank, east from the east bank, center is the shorter S into the same ford. The south grid is the player's bank; camp is the north ink camp. Ranges in units.json are distances in this space.",
+  "designWidth": 720,
+  "designHeight": 1280,
+  "gridCols": 5,
+  "gridRows": 4,
+  "benchSlots": 8,
+  "cellSize": 60,
+  "cellGap": 8,
+  "gridOrigin": { "x": -136, "y": -78 },
+  "benchOrigin": { "x": -266, "y": -424 },
+  "benchStep": 76,
+  "river": { "x": 0, "y": 86, "w": 640, "h": 156 },
+  "camp": { "x": 0, "y": 312 },
+  "lanes": [
+    [
+      { "x": -248, "y": 268 },
+      { "x": -300, "y": 196 },
+      { "x": -320, "y": 120 },
+      { "x": -320, "y": 55 },
+      { "x": -267, "y": 77 },
+      { "x": -213, "y": 109 },
+      { "x": -200, "y": 114 },
+      { "x": -160, "y": 114 },
+      { "x": -107, "y": 101 },
+      { "x": -53, "y": 62 },
+      { "x": 0, "y": 45 },
+      { "x": 0, "y": -8 }
+    ],
+    [
+      { "x": 0, "y": 268 },
+      { "x": -70, "y": 210 },
+      { "x": -150, "y": 160 },
+      { "x": -200, "y": 114 },
+      { "x": -160, "y": 114 },
+      { "x": -107, "y": 101 },
+      { "x": -53, "y": 62 },
+      { "x": 0, "y": 45 },
+      { "x": 0, "y": -8 }
+    ],
+    [
+      { "x": 188, "y": 268 },
+      { "x": 270, "y": 196 },
+      { "x": 320, "y": 130 },
+      { "x": 320, "y": 87 },
+      { "x": 267, "y": 94 },
+      { "x": 213, "y": 75 },
+      { "x": 160, "y": 92 },
+      { "x": 107, "y": 99 },
+      { "x": 53, "y": 83 },
+      { "x": 0, "y": 45 },
+      { "x": 0, "y": -8 }
+    ]
+  ],
+  "projectileSpeed": 920,
+  "hitRadius": 18
+}

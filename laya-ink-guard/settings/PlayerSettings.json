@@ -1,0 +1,25 @@
+{
+  "resolution": {
+    "designWidth": 720,
+    "designHeight": 1280,
+    "scaleMode": "fixedwidth",
+    "screenMode": "vertical",
+    "alignV": "middle",
+    "alignH": "center",
+    "backgroundColor": "#f3e6c8"
+  },
+  "2D": {
+    "FPS": 60,
+    "isAntialias": true,
+    "useRetinalCanvas": true,
+    "isAlpha": false,
+    "defaultFont": "NotoSansCJKsc-Regular",
+    "defaultFontSize": 24
+  },
+  "modules": {
+    "laya.ui": true,
+    "laya.d3": false
+  },
+  "stat": false,
+  "vConsole": false
+}
