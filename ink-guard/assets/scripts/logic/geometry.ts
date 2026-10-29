@@ -1,5 +1,10 @@
 import type { BoardConfig, BoardPoint } from '../config/ConfigTypes';
 
+/** March polylines. A fixture that only set `path` still has one lane. */
+export function boardLanes(board: BoardConfig): BoardPoint[][] {
+  return board.lanes.length > 0 ? board.lanes : [board.path];
+}
+
 export interface Polyline {
   points: BoardPoint[];
   segLens: number[];

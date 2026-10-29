@@ -42,6 +42,11 @@ function cloneRaw(raw) {
   return JSON.parse(JSON.stringify(raw));
 }
 
+function soloPath(board, points) {
+  board.path = points;
+  delete board.lanes;
+}
+
 function bestToken(sim, bench) {
   return [...bench].sort((a, b) => {
     const sa = sim.statOf(a.type, a.level);
@@ -226,18 +231,22 @@ function ruleTests(raw) {
   const cappedResult = capped.drop(capped.tokens[1].id, 'bench', capped.tokens[0].slot);
   check(!cappedResult.ok && cappedResult.reason === 'max-level', 'max level does not merge');
 
-  const backCenter = gridPosition(config.board, config.board.gridCols * 2 + 2);
-  const backCorner = gridPosition(config.board, config.board.gridCols * 2);
-  const midCenter = gridPosition(config.board, config.board.gridCols + 2);
-  const backD = distanceToPath(config.board.path, backCenter.x, backCenter.y);
-  const cornerD = distanceToPath(config.board.path, backCorner.x, backCorner.y);
-  const midD = distanceToPath(config.board.path, midCenter.x, midCenter.y);
+  const lanes = config.board.lanes;
+  check(lanes.length >= 3, 'the march has several lanes');
+  const front = gridPosition(config.board, 2);
+  const second = gridPosition(config.board, config.board.gridCols + 2);
+  const back = gridPosition(config.board, config.board.gridCols * (config.board.gridRows - 1) + 2);
+  const centerLane = lanes[Math.min(1, lanes.length - 1)];
+  const ford = centerLane[centerLane.length - 2];
+  const mouth = centerLane[0];
   const dao1 = config.units.types.dao.byLevel[1].range;
-  const dao2 = config.units.types.dao.byLevel[2].range;
-  check(config.units.types.gong.byLevel[1].range >= cornerD, 'back-row corners sit inside bow level-1 range');
-  check(config.units.types.qiang.byLevel[1].range >= cornerD, 'back-row corners sit inside spear level-1 range');
-  check(dao1 >= midD && dao1 < backD, 'level-1 blade reaches the middle row and still needs a merge for the back row');
-  check(dao2 >= backD, 'blade reaches the back row after one merge');
+  const spear1 = config.units.types.qiang.byLevel[1].range;
+  const bow1 = config.units.types.gong.byLevel[1].range;
+  const gap = (point, from) => Math.hypot(point.x - from.x, point.y - from.y);
+  check(gap(mouth, front) > dao1 && gap(mouth, front) <= bow1, 'melee misses the north mouth and the bow can reach it');
+  check(gap(ford, front) <= dao1 && gap(ford, second) > dao1, 'only the front rank blade reaches the ford');
+  check(gap(ford, second) <= spear1, 'a second-rank spear reaches the ford');
+  check(gap(ford, back) <= bow1 && gap(mouth, back) > bow1, 'a back-rank bow covers the ford but not the spawn mouth');
 
   deliveryTests(raw);
   enemyTests(raw);
@@ -246,7 +255,7 @@ function ruleTests(raw) {
 
 function deliveryTests(raw) {
   const meleeRaw = cloneRaw(raw);
-  meleeRaw.board.path = [{ x: 0, y: 120 }, { x: 0, y: 0 }];
+  soloPath(meleeRaw.board, [{ x: 0, y: 120 }, { x: 0, y: 0 }]);
   meleeRaw.board.projectileSpeed = 1;
   meleeRaw.waves.firstDelay = 0;
   meleeRaw.waves.gapSeconds = 0;
@@ -269,7 +278,7 @@ function deliveryTests(raw) {
   check(melee.enemies.length === 0 || melee.enemies[0].hp <= 0, 'melee damage lands when the strike finishes');
 
   const rangedRaw = cloneRaw(raw);
-  rangedRaw.board.path = [{ x: 0, y: 360 }, { x: 0, y: 0 }];
+  soloPath(rangedRaw.board, [{ x: 0, y: 200 }, { x: 0, y: 0 }]);
   rangedRaw.waves.firstDelay = 0;
   rangedRaw.waves.gapSeconds = 0;
   rangedRaw.waves.waves = [{ id: 1, count: 1, hp: 40, speed: 6, damage: 1, interval: 5 }];

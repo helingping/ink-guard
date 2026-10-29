@@ -8,6 +8,7 @@ import {
   Font,
   Graphics,
   HorizontalTextAlignment,
+  Input,
   Label,
   Node,
   Overflow,
@@ -15,18 +16,33 @@ import {
   resources,
   Sprite,
   SpriteFrame,
-  sys,
   UIOpacity,
   UITransform,
+  Vec2,
   Vec3,
   VerticalTextAlignment,
+  input,
+  instantiate,
+  sys,
   view,
 } from 'cc';
 import { loadGameConfig } from './config/ConfigService';
 import type { GameConfig } from './config/ConfigTypes';
-import { dropSlotAt, pathMarksWithin, slotsWithin } from './logic/geometry';
+import { boardLanes, dropSlotAt, pathMarksWithin, slotsWithin } from './logic/geometry';
 import { GameSim, tokenPosition, type DropResult, type Place, type Shot, type Token } from './logic/GameSim';
-import { Ink, RANK, inkColor, paintRanges, type RangeDot, type RangeRing } from './view/InkWidgets';
+import {
+  Ink,
+  RANK,
+  inkColor,
+  paintLanes,
+  paintRanges,
+  paintTier,
+  tierRankColor,
+  tierScale,
+  tierTint,
+  type RangeDot,
+  type RangeRing,
+} from './view/InkWidgets';
 
 const { ccclass, property } = _decorator;
 
@@ -43,6 +59,8 @@ interface TokenView extends PoseBody {
   id: string;
   root: Node;
   rank: Label;
+  tier: Graphics;
+  tierScale: number;
   shownLevel: number;
 }
 
@@ -96,8 +114,8 @@ interface PointerEvent {
   getID?: () => number;
 }
 
-const HINT = '招募字令，拖上阵。点选或悬停可看射程。相同字令叠成品，不同字令可换位。';
-const GUIDE_HINT = '把两枚「刀」叠在一起。拖动时金色可合成，青色可换位，绿色是空位。';
+const HINT = '北营沿墨路南下。刀骑守前排，枪靠前，弓放后排。点空处取消射程。';
+const GUIDE_HINT = '把两枚「刀」叠在一起。升品后圈纹会变。点空处可取消射程。';
 const GUIDE_KEY = 'ink-guard-merge-guide';
 const UNIT_ORDER = ['dao', 'qiang', 'gong', 'qi'] as const;
 
@@ -112,7 +130,7 @@ const MARK_COLOR: Record<'move' | 'merge' | 'swap', string> = {
  * Chrome (board slots, recruit, speed, win/lose panel) lives in main.scene.
  * This class does not build that tree. Tokens, enemies and shots are runtime
  * actors because they come and go. The range ring stays on the scene Graphics
- * and is redrawn for the hovered, selected, or attacking unit.
+ * and is redrawn for the hovered or selected unit. A tap on empty board or HUD clears it.
  */
 @ccclass('GameApp')
 export class GameApp extends Component {
@@ -224,8 +242,13 @@ export class GameApp extends Component {
   private hover: ActorRef | null = null;
   private selected: ActorRef | null = null;
   private rangeCaption: Label | null = null;
-  /** Keeps a unit's range readable after a short melee strike. Values are clock expiry. */
-  private rangePing = new Map<string, number>();
+  private roadNode: Node | null = null;
+  private roadGraphics: Graphics | null = null;
+  private campNode: Node | null = null;
+  /** Set when a token handles the gesture, so the following board tap does not clear it. */
+  private pointerClaim = false;
+  private claimUntil = 0;
+  private pendingClear = false;
   private lastDt = 0;
   private floatViews = new Map<string, { node: Node; label: Label }>();
 
@@ -256,10 +279,42 @@ export class GameApp extends Component {
       this.loadingLabel.node.active = true;
       this.loadingLabel.string = '研墨中…';
     }
+    input.on(Input.EventType.TOUCH_END, this.onGlobalPointerEnd, this);
+    input.on(Input.EventType.TOUCH_CANCEL, this.onGlobalPointerEnd, this);
     void this.boot();
   }
 
+  onDestroy(): void {
+    input.off(Input.EventType.TOUCH_END, this.onGlobalPointerEnd, this);
+    input.off(Input.EventType.TOUCH_CANCEL, this.onGlobalPointerEnd, this);
+  }
+
+  /** Runs after node handlers. A token gesture sets pointerClaim; anything else clears selection. */
+  private onGlobalPointerEnd(): void {
+    this.pendingClear = true;
+  }
+
+  private applyPointerClear(): void {
+    if (!this.pendingClear) {
+      return;
+    }
+    this.pendingClear = false;
+    const claimed = this.pointerClaim || Date.now() < this.claimUntil;
+    this.pointerClaim = false;
+    if (claimed || this.pointerDown) {
+      return;
+    }
+    this.selected = null;
+    this.hover = null;
+  }
+
+  private claimPointer(): void {
+    this.pointerClaim = true;
+    this.claimUntil = Date.now() + 120;
+  }
+
   update(dt: number): void {
+    this.applyPointerClear();
     this.lastDt = dt;
     this.clock += dt;
     if (this.toastTimer > 0) {
@@ -343,8 +398,9 @@ export class GameApp extends Component {
       this.titleLabel.string = '墨卫';
     }
     if (this.tutorialLabel) {
-      this.tutorialLabel.string = '开局有两枚「刀」。拖到一起就升品。\n金色合成，青色换位，绿色空位。';
+      this.tutorialLabel.string = '开局有两枚「刀」。拖到一起就升品，圈纹会变粗。\n刀骑放前排，弓放后排。点空处取消射程。';
     }
+    this.polishHud();
     this.layoutBoard(config);
     this.layoutHpFill();
     this.collectMarks();
@@ -421,22 +477,104 @@ export class GameApp extends Component {
     if (!board) {
       return;
     }
-    const count = config.board.gridCols * config.board.gridRows;
+    const spec = config.board;
+    const template = board.getChildByName('Cell0');
+    const count = spec.gridCols * spec.gridRows;
     for (let i = 0; i < count; i += 1) {
-      const cell = board.getChildByName(`Cell${i}`);
+      let cell = board.getChildByName(`Cell${i}`);
+      if (!cell && template) {
+        cell = instantiate(template);
+        cell.name = `Cell${i}`;
+        const mark = cell.getChildByName('Mark');
+        if (mark) {
+          mark.active = false;
+        }
+        board.addChild(cell);
+      }
       const pos = tokenPosition(config, { place: 'grid', slot: i });
       cell?.setPosition(pos.x, pos.y, 0);
+      cell?.getComponent(UITransform)?.setContentSize(spec.cellSize, spec.cellSize);
+      cell?.getChildByName('Mark')?.getComponent(UITransform)?.setContentSize(spec.cellSize, spec.cellSize);
     }
-    for (let i = 0; i < config.board.benchSlots; i += 1) {
+    for (let i = 0; i < spec.benchSlots; i += 1) {
       const slot = board.getChildByName(`Bench${i}`);
       const pos = tokenPosition(config, { place: 'bench', slot: i });
       slot?.setPosition(pos.x, pos.y, 0);
+      slot?.getComponent(UITransform)?.setContentSize(spec.cellSize, spec.cellSize);
     }
-    const gate = config.board.path[config.board.path.length - 1];
+    const river = board.getChildByName('River');
+    if (river && spec.river) {
+      river.setPosition(spec.river.x, spec.river.y, 0);
+      river.getComponent(UITransform)?.setContentSize(spec.river.w, spec.river.h);
+    }
+    const plate = board.getChildByName('BoardPlate');
+    if (plate) {
+      const step = spec.cellSize + spec.cellGap;
+      const plateX = spec.gridOrigin.x + ((spec.gridCols - 1) * step) / 2;
+      const plateY = spec.gridOrigin.y - ((spec.gridRows - 1) * step) / 2;
+      plate.setPosition(plateX, plateY, 0);
+      plate.getComponent(UITransform)?.setContentSize(
+        (spec.gridCols - 1) * step + spec.cellSize + 56,
+        (spec.gridRows - 1) * step + spec.cellSize + 48,
+      );
+    }
+    this.ensureRoads(board, config);
+    this.ensureCamp(board, config);
+    const gate = spec.path[spec.path.length - 1];
     this.adouSeal?.setPosition(gate.x, gate.y, 0);
     if (this.rangeNode) {
       this.rangeNode.active = false;
     }
+  }
+
+  private ensureRoads(board: Node, config: GameConfig): void {
+    if (!this.roadNode || !this.roadNode.isValid) {
+      const node = new Node('Roads');
+      node.layer = board.layer;
+      const transform = node.addComponent(UITransform);
+      transform.setContentSize(8, 8);
+      this.roadGraphics = node.addComponent(Graphics);
+      board.addChild(node);
+      this.roadNode = node;
+    }
+    const river = board.getChildByName('River');
+    if (river && this.roadNode.parent === board) {
+      this.roadNode.setSiblingIndex(river.getSiblingIndex() + 1);
+    }
+    if (this.roadGraphics) {
+      paintLanes(this.roadGraphics, boardLanes(config.board));
+    }
+  }
+
+  private ensureCamp(board: Node, config: GameConfig): void {
+    const camp = config.board.camp;
+    if (!camp) {
+      return;
+    }
+    if (!this.campNode || !this.campNode.isValid) {
+      const node = new Node('NorthSeal');
+      node.layer = board.layer;
+      const transform = node.addComponent(UITransform);
+      transform.setContentSize(88, 88);
+      const g = node.addComponent(Graphics);
+      g.fillColor = inkColor('#f4efe4', 235);
+      g.circle(0, 0, 32);
+      g.fill();
+      g.lineWidth = 4;
+      g.strokeColor = inkColor('#243044', 255);
+      g.circle(0, 0, 32);
+      g.stroke();
+      g.lineWidth = 2;
+      g.circle(0, 0, 26);
+      g.stroke();
+      const glyph = this.addText(node, '寇', 30, inkColor('#243044'), this.titleFont, 64, 44);
+      glyph.node.setPosition(0, 6, 0);
+      const caption = this.addText(node, '北营', 16, inkColor('#1a120c'), this.bodyFont, 72, 22);
+      caption.node.setPosition(0, -40, 0);
+      board.addChild(node);
+      this.campNode = node;
+    }
+    this.campNode.setPosition(camp.x, camp.y, 0);
   }
 
   private layoutHpFill(): void {
@@ -525,10 +663,12 @@ export class GameApp extends Component {
       return;
     }
     this.pointerDown = true;
+    this.claimPointer();
     this.dragId = id;
     this.dragTouch = this.pointerId(event);
     this.dragPos = this.readPointer(event);
-    viewToken.root.setScale(1.08, 1.08, 1);
+    const lifted = viewToken.tierScale * 1.08;
+    viewToken.root.setScale(lifted, lifted, 1);
     viewToken.root.setSiblingIndex(999);
     viewToken.root.setPosition(this.dragPos.x, this.dragPos.y, 0);
     this.syncRange();
@@ -566,11 +706,13 @@ export class GameApp extends Component {
     this.dragId = null;
     this.dragTouch = -1;
     this.uiLockUntil = Date.now() + 180;
+    this.claimPointer();
     this.selected = { kind: 'token', id: tokenId };
     this.clearMarks();
     const viewToken = this.tokenViews.get(tokenId);
     if (viewToken) {
-      viewToken.root.setScale(1, 1, 1);
+      const scale = viewToken.tierScale;
+      viewToken.root.setScale(scale, scale, 1);
     }
     const result = this.resolveDrop(tokenId, this.dragPos.x, this.dragPos.y);
     if (!result.ok) {
@@ -677,8 +819,7 @@ export class GameApp extends Component {
         this.tokenViews.set(token.id, viewToken);
       }
       if (viewToken.shownLevel !== token.level) {
-        viewToken.shownLevel = token.level;
-        viewToken.rank.string = `${RANK[token.level] ?? token.level}品`;
+        this.applyTier(viewToken, token);
       }
       this.advancePose(viewToken);
       const idle = this.frameFor(token.type);
@@ -689,7 +830,8 @@ export class GameApp extends Component {
       if (this.dragId !== token.id) {
         const pos = tokenPosition(this.config, token);
         viewToken.root.setPosition(pos.x, pos.y, 0);
-        viewToken.root.setScale(1, 1, 1);
+        const scale = viewToken.tierScale;
+        viewToken.root.setScale(scale, scale, 1);
       }
     }
   }
@@ -710,8 +852,13 @@ export class GameApp extends Component {
     if (!frame) {
       this.addText(root, type.glyph, 48, inkColor(type.ink), this.titleFont, 96, 72).node.setPosition(0, 8, 0);
     }
-    const rank = this.addText(root, `${RANK[token.level] ?? token.level}品`, 18, inkColor(Ink.brown), this.bodyFont, 88, 28);
-    rank.node.setPosition(0, -46, 0);
+    const rank = this.addText(root, `${RANK[token.level] ?? token.level}品`, 20, inkColor(tierRankColor(token.level)), this.bodyFont, 96, 30);
+    rank.node.setPosition(0, -48, 0);
+    const tierNode = new Node('Tier');
+    tierNode.layer = root.layer;
+    tierNode.addComponent(UITransform).setContentSize(120, 120);
+    const tier = tierNode.addComponent(Graphics);
+    root.insertChild(tierNode, 0);
     const style = this.addText(
       root,
       `${type.styleLabel}·${type.motionLabel}`,
@@ -744,18 +891,37 @@ export class GameApp extends Component {
     };
     root.on(Node.EventType.MOUSE_ENTER, onEnter, this);
     root.on(Node.EventType.MOUSE_LEAVE, onLeave, this);
-    return {
+    const viewToken: TokenView = {
       id: token.id,
       poseKey: token.type,
       root,
       body: sprite,
       rank,
+      tier,
+      tierScale: 1,
       idle: frame,
       poseFrames: [],
       poseTime: -1,
       poseDuration: 0.34,
-      shownLevel: token.level,
+      shownLevel: -1,
     };
+    this.applyTier(viewToken, token);
+    return viewToken;
+  }
+
+  private applyTier(viewToken: TokenView, token: Token): void {
+    const type = this.config?.units.types[token.type];
+    viewToken.shownLevel = token.level;
+    viewToken.tierScale = tierScale(token.level);
+    viewToken.rank.string = `${RANK[token.level] ?? token.level}品`;
+    viewToken.rank.color = inkColor(tierRankColor(token.level));
+    viewToken.rank.isBold = token.level >= 2;
+    viewToken.body.color = inkColor(tierTint(token.level));
+    paintTier(viewToken.tier, token.level, type?.ink ?? Ink.ink);
+    if (this.dragId !== token.id) {
+      const scale = viewToken.tierScale;
+      viewToken.root.setScale(scale, scale, 1);
+    }
   }
 
   private advancePose(view: PoseBody): void {
@@ -906,7 +1072,6 @@ export class GameApp extends Component {
         view = this.createShotView(shot);
         this.shotViews.set(shot.id, view);
         this.startPose(shot.sourceId);
-        this.rangePing.set(shot.side === 'foe' ? `foe:${shot.sourceId}` : `token:${shot.sourceId}`, this.clock + 0.85);
       }
       view.node.setPosition(shot.x, shot.y, 0);
       const dx = shot.x - shot.fromX;
@@ -1099,7 +1264,8 @@ export class GameApp extends Component {
     this.dragTouch = -1;
     this.hover = null;
     this.selected = null;
-    this.rangePing.clear();
+    this.pendingClear = false;
+    this.pointerClaim = false;
     if (this.rangeNode) {
       this.rangeNode.active = false;
     }
@@ -1156,8 +1322,7 @@ export class GameApp extends Component {
     if (!this.sim || !this.config || !this.rangeNode || !this.rangeGraphics) {
       return;
     }
-    const strong = this.strongFocus() ?? this.latestAttack();
-    const attackers = this.attackFocuses();
+    const strong = this.strongFocus();
     const rings: RangeRing[] = [];
     const dots: RangeDot[] = [];
     const seen = new Set<string>();
@@ -1178,16 +1343,15 @@ export class GameApp extends Component {
       if (!emphasized) {
         return;
       }
-      for (const point of pathMarksWithin(this.config!.board.path, focus.x, focus.y, focus.range)) {
-        dots.push({ x: point.x, y: point.y, hex: focus.ink });
+      for (const lane of boardLanes(this.config!.board)) {
+        for (const point of pathMarksWithin(lane, focus.x, focus.y, focus.range)) {
+          dots.push({ x: point.x, y: point.y, hex: focus.ink });
+        }
       }
     };
     const emphasized = strong;
     if (strong) {
       push(strong, true);
-    }
-    for (const focus of attackers) {
-      push(focus, false);
     }
     paintRanges(this.rangeGraphics, rings, dots);
     this.rangeNode.setPosition(0, 0, 0);
@@ -1209,63 +1373,6 @@ export class GameApp extends Component {
       return this.focusFor(this.selected, null, null, 0);
     }
     return null;
-  }
-
-  private attackFocuses(): RangeFocus[] {
-    if (!this.sim) {
-      return [];
-    }
-    const refs = new Map<string, ActorRef>();
-    for (const shot of this.sim.shots) {
-      const ref: ActorRef = shot.side === 'foe'
-        ? { kind: 'foe', id: shot.sourceId }
-        : { kind: 'token', id: shot.sourceId };
-      refs.set(`${ref.kind}:${ref.id}`, ref);
-    }
-    for (const [key, until] of this.rangePing) {
-      if (until < this.clock) {
-        this.rangePing.delete(key);
-        continue;
-      }
-      if (refs.has(key)) {
-        continue;
-      }
-      const sep = key.indexOf(':');
-      const kind = key.slice(0, sep);
-      if (kind !== 'token' && kind !== 'foe') {
-        continue;
-      }
-      refs.set(key, { kind, id: key.slice(sep + 1) });
-    }
-    const focuses: RangeFocus[] = [];
-    for (const ref of refs.values()) {
-      const focus = this.focusFor(ref, null, null, 0);
-      if (focus) {
-        focuses.push(focus);
-      }
-    }
-    return focuses;
-  }
-
-  /** The attacker whose range should stay up when nothing is selected. */
-  private latestAttack(): RangeFocus | null {
-    let bestKey = '';
-    let bestUntil = -1;
-    for (const [key, until] of this.rangePing) {
-      if (until >= this.clock && until > bestUntil) {
-        bestUntil = until;
-        bestKey = key;
-      }
-    }
-    if (!bestKey) {
-      return null;
-    }
-    const sep = bestKey.indexOf(':');
-    const kind = bestKey.slice(0, sep);
-    if (kind !== 'token' && kind !== 'foe') {
-      return null;
-    }
-    return this.focusFor({ kind, id: bestKey.slice(sep + 1) }, null, null, 0);
   }
 
   private focusFor(ref: ActorRef, x: number | null, y: number | null, shotAge: number): RangeFocus | null {
@@ -1367,6 +1474,38 @@ export class GameApp extends Component {
     this.rangeCaption.node.setPosition(focus.x, focus.y + 74, 0);
   }
 
+  private polishHud(): void {
+    if (!this.hudLayer) {
+      return;
+    }
+    const ink = inkColor('#1a120c');
+    const cream = inkColor('#f7f1e4', 235);
+    const walk = (node: Node) => {
+      const label = node.getComponent(Label);
+      if (label) {
+        const onButton = !!node.parent?.getComponent(Button);
+        const keepColor = node.name === 'BannerText' || node.name === 'ResultTitle';
+        label.enableOutline = true;
+        label.outlineWidth = onButton ? 2 : 3;
+        label.outlineColor = onButton ? inkColor('#3a1814', 230) : cream;
+        label.enableShadow = !onButton;
+        label.shadowColor = inkColor('#f7f1e4', 180);
+        label.shadowOffset = new Vec2(0, 0);
+        label.shadowBlur = onButton ? 0 : 4;
+        label.isBold = true;
+        if (!onButton && !keepColor) {
+          label.color = ink;
+        }
+        if (!onButton && label.fontSize > 0 && label.fontSize < 22) {
+          label.fontSize += 2;
+          label.lineHeight = label.fontSize + 8;
+        }
+      }
+      node.children.forEach(walk);
+    };
+    walk(this.hudLayer);
+  }
+
   private actorNode(name: string, width: number, height: number): Node {
     const node = new Node(name);
     node.layer = this.node.layer;
@@ -1387,6 +1526,11 @@ export class GameApp extends Component {
     label.verticalAlign = VerticalTextAlignment.CENTER;
     label.overflow = Overflow.SHRINK;
     label.color = color;
+    const light = color.r + color.g + color.b > 520;
+    label.enableOutline = true;
+    label.outlineWidth = Math.max(2, Math.round(size / 9));
+    label.outlineColor = light ? inkColor('#1a120c', 220) : inkColor('#f7f1e4', 235);
+    label.isBold = size >= 16;
     if (font) {
       label.font = font;
       label.useSystemFont = false;

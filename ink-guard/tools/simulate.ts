@@ -7,7 +7,7 @@ import type { GameConfig } from '../assets/scripts/config/ConfigTypes';
 import { normalizeConfig } from '../assets/scripts/config/validateConfig';
 import type { Token } from '../assets/scripts/logic/GameSim';
 import { GameSim } from '../assets/scripts/logic/GameSim';
-import { benchPosition, buildPath, dropSlotAt, gridPosition, pathMarksWithin, pointOnPath, slotsWithin } from '../assets/scripts/logic/geometry';
+import { benchPosition, boardLanes, buildPath, dropSlotAt, gridPosition, pathMarksWithin, pointOnPath, slotsWithin } from '../assets/scripts/logic/geometry';
 
 declare function require(name: string): {
   readFileSync(path: string, encoding: 'utf8'): string;
@@ -53,6 +53,12 @@ function loadRaw(): Record<string, unknown> {
 
 function cloneRaw(raw: Record<string, unknown>): Record<string, unknown> {
   return JSON.parse(JSON.stringify(raw)) as Record<string, unknown>;
+}
+
+/** Headless fixtures override one polyline and must not keep the authored lanes. */
+function soloPath(board: Record<string, unknown>, points: Array<{ x: number; y: number }>): void {
+  board.path = points;
+  delete board.lanes;
 }
 
 function bestToken(sim: GameSim, bench: Token[]): Token {
@@ -273,7 +279,7 @@ function ruleTests(raw: Record<string, unknown>): void {
 
   const leakRaw = cloneRaw(raw);
   const leakBoard = leakRaw.board as Record<string, unknown>;
-  leakBoard.path = [{ x: 0, y: 0 }, { x: 100, y: 0 }];
+  soloPath(leakBoard, [{ x: 0, y: 0 }, { x: 100, y: 0 }]);
   const leakWaves = leakRaw.waves as Record<string, unknown>;
   leakWaves.firstDelay = 0;
   leakWaves.gapSeconds = 0;
@@ -288,7 +294,7 @@ function ruleTests(raw: Record<string, unknown>): void {
 
   const chipRaw = cloneRaw(raw);
   const chipBoard = chipRaw.board as Record<string, unknown>;
-  chipBoard.path = [{ x: 0, y: 0 }, { x: 80, y: 0 }];
+  soloPath(chipBoard, [{ x: 0, y: 0 }, { x: 80, y: 0 }]);
   const chipWaves = chipRaw.waves as Record<string, unknown>;
   chipWaves.firstDelay = 0;
   chipWaves.gapSeconds = 0;
@@ -301,7 +307,7 @@ function ruleTests(raw: Record<string, unknown>): void {
 
   const killRaw = cloneRaw(raw);
   const killBoard = killRaw.board as Record<string, unknown>;
-  killBoard.path = [{ x: 0, y: 400 }, { x: 0, y: 72 }];
+  soloPath(killBoard, [{ x: 0, y: 400 }, { x: 0, y: 72 }]);
   killBoard.projectileSpeed = 5000;
   const killWaves = killRaw.waves as Record<string, unknown>;
   killWaves.firstDelay = 0;
@@ -327,30 +333,50 @@ function ruleTests(raw: Record<string, unknown>): void {
   check(kill.phase === 'win' && kill.killCount === 1 && kill.leakCount === 0, 'a deployed token can clear an enemy before it reaches Adou');
 
   check(config.waves.firstDelay >= 10, 'opening prep leaves time to recruit and merge');
-  const backCenter = gridPosition(config.board, config.board.gridCols * 2 + 2);
-  const backCorner = gridPosition(config.board, config.board.gridCols * 2);
-  const midCenter = gridPosition(config.board, config.board.gridCols + 2);
-  const backD = distanceToPath(config.board.path, backCenter.x, backCenter.y);
-  const cornerD = distanceToPath(config.board.path, backCorner.x, backCorner.y);
-  const midD = distanceToPath(config.board.path, midCenter.x, midCenter.y);
-  const dao1 = config.units.types.dao.byLevel[1].range;
-  const dao2 = config.units.types.dao.byLevel[2].range;
-  check(config.units.types.gong.byLevel[1].range >= cornerD, 'back-row corners sit inside bow level-1 range');
-  check(config.units.types.qiang.byLevel[1].range >= cornerD, 'back-row corners sit inside spear level-1 range');
-  check(dao1 >= midD && dao1 < backD, 'level-1 blade reaches the middle row and still needs a merge for the back row');
-  check(dao2 >= backD, 'blade reaches the back row after one merge');
-
+  const lanes = boardLanes(config.board);
+  check(lanes.length >= 3, 'the march has several lanes');
+  const seal = lanes[0][lanes[0].length - 1];
+  check(
+    lanes.every((lane) => Math.hypot(lane[lane.length - 1].x - seal.x, lane[lane.length - 1].y - seal.y) < 1),
+    'every lane ends on the same seal',
+  );
   const front = gridPosition(config.board, 2);
+  const frontWing = gridPosition(config.board, 0);
+  const second = gridPosition(config.board, config.board.gridCols + 2);
+  const back = gridPosition(config.board, config.board.gridCols * (config.board.gridRows - 1) + 2);
+  const backWing = gridPosition(config.board, config.board.gridCols * (config.board.gridRows - 1));
+  const centerLane = lanes[Math.min(1, lanes.length - 1)];
+  const ford = centerLane[centerLane.length - 2];
+  const mouth = centerLane[0];
+  const crest = lanes[0].find((point) => point.x === -200 && point.y === 114) ?? lanes[0][4];
+  check(crest.x === -200 && crest.y === 114, 'the west lane rides the traced river crest');
+  const dao1 = config.units.types.dao.byLevel[1].range;
+  const spear1 = config.units.types.qiang.byLevel[1].range;
+  const bow1 = config.units.types.gong.byLevel[1].range;
+  const gap = (point: { x: number; y: number }, from: { x: number; y: number }) => Math.hypot(point.x - from.x, point.y - from.y);
+  check(gap(mouth, front) > dao1 && gap(mouth, front) > spear1, 'level-1 melee cannot hit a foe still at the north mouth');
+  check(gap(mouth, front) <= bow1, 'a front-rank bow can hit the north mouth');
+  check(gap(ford, front) <= dao1, 'a front-rank blade reaches the painted ford');
+  check(gap(ford, second) > dao1, 'a second-rank blade does not reach the ford');
+  check(gap(ford, second) <= spear1, 'a second-rank spear reaches the ford');
+  check(gap(seal, frontWing) <= dao1, 'front-rank wings still reach the seal');
+  const backRoad = Math.min(...lanes.map((lane) => distanceToPath(lane, back.x, back.y)));
+  const backWingRoad = Math.min(...lanes.map((lane) => distanceToPath(lane, backWing.x, backWing.y)));
+  check(backRoad > dao1 && backRoad > spear1 && backWingRoad > spear1, 'back-rank melee cannot reach any lane');
+  check(gap(ford, back) <= bow1 && gap(ford, backWing) <= bow1, 'a back-rank bow covers the ford');
+  check(gap(crest, back) <= bow1, 'a back-rank bow reaches the river crest');
+  check(gap(mouth, back) > bow1, 'a back-rank bow does not reach the spawn mouth');
+
   const tiny = slotsWithin(config.board, front.x, front.y, 1);
   const bladeSlots = slotsWithin(config.board, front.x, front.y, dao1);
-  const bowSlots = slotsWithin(config.board, front.x, front.y, config.units.types.gong.byLevel[1].range);
+  const bowSlots = slotsWithin(config.board, front.x, front.y, bow1);
   check(tiny.length === 1 && tiny[0] === 2, 'a 1px range highlights only the token cell');
   check(bladeSlots.includes(2) && bladeSlots.length > 1, 'blade range highlights its cell and neighbors');
   check(bowSlots.length > bladeSlots.length, 'bow range highlights more cells than blade');
-  const backBladeRoad = pathMarksWithin(config.board.path, backCenter.x, backCenter.y, dao1);
-  const backBowRoad = pathMarksWithin(config.board.path, backCenter.x, backCenter.y, config.units.types.gong.byLevel[1].range);
-  check(backBladeRoad.length === 0, 'level-1 blade on the back row does not cover the road');
-  check(backBowRoad.length > 0, 'level-1 bow on the back row covers part of the road');
+  const backBladeRoad = lanes.reduce((sum, lane) => sum + pathMarksWithin(lane, back.x, back.y, dao1).length, 0);
+  const backBowRoad = lanes.reduce((sum, lane) => sum + pathMarksWithin(lane, back.x, back.y, bow1).length, 0);
+  check(backBladeRoad === 0, 'level-1 blade on the back row does not cover a lane');
+  check(backBowRoad > 0, 'level-1 bow on the back row covers part of a lane');
 
   const rangedFoes = config.foes.order.filter((id) => config.foes.types[id].style === 'ranged');
   check(rangedFoes.length >= 1 && config.foes.order.some((id) => config.foes.types[id].style === 'melee'), 'foes include melee and ranged ink enemies');
@@ -371,7 +397,7 @@ function ruleTests(raw: Record<string, unknown>): void {
 function deliveryTests(raw: Record<string, unknown>): void {
   const meleeRaw = cloneRaw(raw);
   const meleeBoard = meleeRaw.board as Record<string, unknown>;
-  meleeBoard.path = [{ x: 0, y: 120 }, { x: 0, y: 0 }];
+  soloPath(meleeBoard, [{ x: 0, y: 120 }, { x: 0, y: 0 }]);
   meleeBoard.projectileSpeed = 1;
   const meleeWaves = meleeRaw.waves as Record<string, unknown>;
   meleeWaves.firstDelay = 0;
@@ -396,7 +422,7 @@ function deliveryTests(raw: Record<string, unknown>): void {
 
   const rangedRaw = cloneRaw(raw);
   const rangedBoard = rangedRaw.board as Record<string, unknown>;
-  rangedBoard.path = [{ x: 0, y: 360 }, { x: 0, y: 0 }];
+  soloPath(rangedBoard, [{ x: 0, y: 200 }, { x: 0, y: 0 }]);
   rangedBoard.projectileSpeed = 5000;
   const rangedWaves = rangedRaw.waves as Record<string, unknown>;
   rangedWaves.firstDelay = 0;
@@ -429,7 +455,14 @@ function deliveryTests(raw: Record<string, unknown>): void {
 function foeDeliveryTests(raw: Record<string, unknown>): void {
   const meleeRaw = cloneRaw(raw);
   const meleeBoard = meleeRaw.board as Record<string, unknown>;
-  meleeBoard.path = [{ x: 0, y: 120 }, { x: 80, y: 120 }];
+  const meleeOrigin = (meleeRaw.board as { gridOrigin: { x: number; y: number }; cellSize: number; cellGap: number });
+  const meleeStep = meleeOrigin.cellSize + meleeOrigin.cellGap;
+  const meleeFrontY = meleeOrigin.gridOrigin.y + 36;
+  const meleeFrontX = meleeOrigin.gridOrigin.x + 2 * meleeStep;
+  soloPath(meleeBoard, [
+    { x: meleeFrontX, y: meleeFrontY },
+    { x: meleeFrontX + 48, y: meleeFrontY },
+  ]);
   const meleeWaves = meleeRaw.waves as Record<string, unknown>;
   meleeWaves.firstDelay = 0;
   meleeWaves.gapSeconds = 0;
@@ -456,7 +489,14 @@ function foeDeliveryTests(raw: Record<string, unknown>): void {
 
   const rangedRaw = cloneRaw(raw);
   const rangedBoard = rangedRaw.board as Record<string, unknown>;
-  rangedBoard.path = [{ x: 0, y: 200 }, { x: 40, y: 200 }];
+  const rangedOrigin = rangedRaw.board as { gridOrigin: { x: number; y: number }; cellSize: number; cellGap: number };
+  const rangedStep = rangedOrigin.cellSize + rangedOrigin.cellGap;
+  const rangedFrontY = rangedOrigin.gridOrigin.y + 40;
+  const rangedFrontX = rangedOrigin.gridOrigin.x + 2 * rangedStep;
+  soloPath(rangedBoard, [
+    { x: rangedFrontX, y: rangedFrontY },
+    { x: rangedFrontX + 36, y: rangedFrontY },
+  ]);
   const rangedWaves = rangedRaw.waves as Record<string, unknown>;
   rangedWaves.firstDelay = 0;
   rangedWaves.gapSeconds = 0;

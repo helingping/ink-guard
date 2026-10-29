@@ -10,7 +10,7 @@ Cocos Creator **3.8.8** 工程。请用 Creator 打开本目录，不要打开�
 
 - `Background`：宣纸底，Widget 拉满
 - `Decor`：山、竹、墨溅，从概念图切出
-- `Board`：`Cell0`–`Cell14`、`Bench0`–`Bench7`、河道、棋盘底、`AdouSeal`、`Range`（Graphics，只画射程圈）
+- `Board`：`Cell0`–`Cell19`（5×4 南岸）、`Bench0`–`Bench7`、河道、棋盘底、`AdouSeal`、`Range`（Graphics，只画射程圈）。播放时再按 `board.json` 铺三条墨路，并在北营画「寇」印。
 - `Actors`：运行时的字令、墨寇、弹道
 - `Hud`：标题（马善政）、波次和血条（`StatusColumn` 上有 Layout）、馒头和招募（`MantouRow` 上有 Layout）、倍速、提示、合成引导、胜负 `Overlay`
 

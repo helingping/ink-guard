@@ -98,6 +98,14 @@ export interface BoardPoint {
   y: number;
 }
 
+/** River sprite rect in board space. The lane polylines are traced in this rect. */
+export interface RiverRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 export interface BoardConfig {
   designWidth: number;
   designHeight: number;
@@ -109,7 +117,17 @@ export interface BoardConfig {
   gridOrigin: BoardPoint;
   benchOrigin: BoardPoint;
   benchStep: number;
+  /**
+   * Every march. Each polyline starts at a north mouth and ends on the same seal.
+   * The middle lane is also copied to `path` for the seal anchor.
+   */
+  lanes: BoardPoint[][];
+  /** Seal lane (the shared end point). Prefer `lanes` for movement. */
   path: BoardPoint[];
+  /** Painted river the horizontal lane samples sit on. Omitted in headless fixtures. */
+  river: RiverRect | null;
+  /** North camp seal. Omitted in headless fixtures. */
+  camp: BoardPoint | null;
   projectileSpeed: number;
   hitRadius: number;
 }

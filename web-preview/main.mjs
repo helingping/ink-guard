@@ -10,8 +10,8 @@ import {
 } from './sim.mjs';
 
 const GUIDE_KEY = 'ink-guard-merge-guide';
-const HINT = '招募字令，拖上阵。相同字令叠在一起升品，不同字令可以换位。';
-const GUIDE_HINT = '把两枚「刀」叠在一起。拖动时金色可合成，青色可换位，绿色是空位。';
+const HINT = '北营沿墨路南下。刀骑守前排，枪靠前，弓放后排。点空处取消射程。';
+const GUIDE_HINT = '把两枚「刀」叠在一起。升品后圈纹会变。点空处可取消射程。';
 const RANK = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
 const MARK = { move: '#2f6b4f', merge: '#c6a15a', swap: '#3d6f8a' };
 const SCRIPT_SRC = document.currentScript?.src || '';
@@ -76,6 +76,7 @@ const art = {
   bamboo: null,
   cell: null,
   seal: null,
+  river: null,
   arrow: null,
   units: {},
   pose: {},
@@ -90,6 +91,7 @@ let toast = '';
 let toastTimer = 0;
 let guidePending = false;
 let drag = null;
+let selectedId = null;
 let lastFrame = 0;
 let clock = 0;
 let shownPhase = 'playing';
@@ -210,17 +212,19 @@ function knockOutBlack(image) {
 }
 
 async function loadArt() {
-  const [paper, mountain, cell, seal, arrow] = await Promise.all([
+  const [paper, mountain, cell, seal, river, arrow] = await Promise.all([
     loadImage('textures/bg-paper.png'),
     loadImage('textures/mountain-top.png'),
     loadImage('textures/cell.png'),
     loadImage('textures/seal-adou.png'),
+    loadImage('textures/river.png'),
     loadImage('fx/gong-arrow.png'),
   ]);
   art.paper = paper;
   art.mountain = mountain;
   art.cell = cell;
   art.seal = seal;
+  art.river = river;
   art.arrow = knockOutBlack(arrow);
   await Promise.all(
     config.units.order.map(async (id) => {
@@ -312,6 +316,10 @@ function tokenAt(x, y) {
   return best;
 }
 
+function clearSelection() {
+  selectedId = null;
+}
+
 function onPointerDown(event) {
   if (!sim || sim.phase !== 'playing' || drag) {
     return;
@@ -319,10 +327,12 @@ function onPointerDown(event) {
   const point = clientToBoard(event.clientX, event.clientY);
   const token = tokenAt(point.x, point.y);
   if (!token) {
+    clearSelection();
     return;
   }
   event.preventDefault();
   canvas.setPointerCapture(event.pointerId);
+  selectedId = token.id;
   drag = {
     id: token.id,
     pointerId: event.pointerId,
@@ -364,6 +374,7 @@ function onPointerUp(event) {
 }
 
 function recruit() {
+  clearSelection();
   if (!sim || sim.phase !== 'playing' || drag) {
     return;
   }
@@ -374,6 +385,7 @@ function recruit() {
 }
 
 function toggleSpeed() {
+  clearSelection();
   if (!sim) {
     return;
   }
@@ -386,6 +398,7 @@ function restart() {
     return;
   }
   drag = null;
+  clearSelection();
   timeScale = 1;
   ui.speed.textContent = '常速';
   toastTimer = 0;
@@ -469,30 +482,39 @@ function drawBackground() {
   }
 }
 
+function traceLane(lane) {
+  lane.forEach((point, index) => {
+    const screen = toScreen(point.x, point.y);
+    if (index === 0) {
+      ctx.moveTo(screen.x, screen.y);
+    } else {
+      ctx.lineTo(screen.x, screen.y);
+    }
+  });
+}
+
 function drawRiver() {
-  const path = config.board.path;
+  const river = config.board.river;
+  if (art.river && river) {
+    const top = toScreen(river.x - river.w / 2, river.y + river.h / 2);
+    ctx.drawImage(art.river, top.x, top.y, river.w, river.h);
+  }
+  const lanes = config.board.lanes?.length ? config.board.lanes : [config.board.path];
   ctx.save();
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  const trace = () => {
+  for (const lane of lanes) {
     ctx.beginPath();
-    path.forEach((point, index) => {
-      const screen = toScreen(point.x, point.y);
-      if (index === 0) {
-        ctx.moveTo(screen.x, screen.y);
-      } else {
-        ctx.lineTo(screen.x, screen.y);
-      }
-    });
-  };
-  trace();
-  ctx.strokeStyle = 'rgba(70, 104, 118, 0.28)';
-  ctx.lineWidth = 34;
-  ctx.stroke();
-  trace();
-  ctx.strokeStyle = 'rgba(214, 228, 226, 0.72)';
-  ctx.lineWidth = 12;
-  ctx.stroke();
+    traceLane(lane);
+    ctx.strokeStyle = 'rgba(79, 124, 144, 0.34)';
+    ctx.lineWidth = 26;
+    ctx.stroke();
+    ctx.beginPath();
+    traceLane(lane);
+    ctx.strokeStyle = 'rgba(247, 241, 228, 0.9)';
+    ctx.lineWidth = 9;
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -524,7 +546,39 @@ function drawBoard() {
   }
 }
 
+function drawCamp() {
+  const camp = config.board.camp;
+  if (!camp) {
+    return;
+  }
+  const screen = toScreen(camp.x, camp.y);
+  ctx.save();
+  ctx.translate(screen.x, screen.y);
+  ctx.beginPath();
+  ctx.arc(0, 0, 32, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(244, 239, 228, 0.94)';
+  ctx.fill();
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#243044';
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, 26, 0, Math.PI * 2);
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = '#243044';
+  ctx.font = font(30, true);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(247, 241, 228, 0.95)';
+  ctx.strokeText('寇', 0, 1);
+  ctx.fillText('寇', 0, 1);
+  paintPlate('北营', 46, 15);
+  ctx.restore();
+}
+
 function drawSeal() {
+  drawCamp();
   const end = config.board.path[config.board.path.length - 1];
   const screen = toScreen(end.x, end.y);
   ctx.save();
@@ -585,17 +639,76 @@ function drawMarks() {
   }
 }
 
+function tierScaleOf(level) {
+  if (level >= 4) {
+    return 1.36;
+  }
+  if (level >= 3) {
+    return 1.22;
+  }
+  if (level >= 2) {
+    return 1.1;
+  }
+  return 1;
+}
+
+function tierTintOf(level) {
+  if (level >= 4) {
+    return 'rgba(255, 213, 106, 0.55)';
+  }
+  if (level >= 3) {
+    return 'rgba(255, 208, 180, 0.4)';
+  }
+  if (level >= 2) {
+    return 'rgba(255, 241, 228, 0.28)';
+  }
+  return null;
+}
+
+function drawTier(level, ink) {
+  const rings = Math.min(4, Math.max(1, level));
+  const gold = level >= 4 ? '#c6a15a' : ink;
+  for (let i = 0; i < rings; i += 1) {
+    ctx.beginPath();
+    ctx.arc(0, 0, 30 + i * 5, 0, Math.PI * 2);
+    ctx.lineWidth = i === rings - 1 ? 2.2 + level : 1.4;
+    ctx.strokeStyle = i === rings - 1 ? gold : ink;
+    ctx.globalAlpha = i === rings - 1 ? 0.95 : 0.65;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  if (level >= 2) {
+    const orbit = 26 + rings * 5;
+    ctx.fillStyle = gold;
+    for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      ctx.beginPath();
+      ctx.arc(sx * orbit * 0.7, sy * orbit * 0.7, level >= 3 ? 3.2 : 2.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  if (level >= 3) {
+    ctx.beginPath();
+    ctx.arc(0, 0, 14, 0, Math.PI * 2);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = gold;
+    ctx.stroke();
+  }
+}
+
 function drawRange() {
-  if (!drag) {
+  const id = drag?.id ?? selectedId;
+  if (!id) {
     return;
   }
-  const token = sim.tokens.find((entry) => entry.id === drag.id);
+  const token = sim.tokens.find((entry) => entry.id === id);
   if (!token) {
+    selectedId = null;
     return;
   }
   const stat = sim.statOf(token.type, token.level);
   const type = config.units.types[token.type];
-  const screen = toScreen(drag.x, drag.y);
+  const at = drag ? { x: drag.x, y: drag.y } : tokenPosition(config, token);
+  const screen = toScreen(at.x, at.y);
   ctx.save();
   ctx.beginPath();
   ctx.arc(screen.x, screen.y, stat.range, 0, Math.PI * 2);
@@ -622,9 +735,8 @@ function drawToken(token, at) {
   }
   ctx.save();
   ctx.translate(at.x, at.y);
-  if (drag && drag.id === token.id) {
-    ctx.scale(1.08, 1.08);
-  }
+  const scale = tierScaleOf(token.level) * (drag && drag.id === token.id ? 1.08 : 1);
+  ctx.scale(scale, scale);
   if (!sprite) {
     ctx.beginPath();
     ctx.arc(0, 0, size / 2 - 2, 0, Math.PI * 2);
@@ -642,10 +754,16 @@ function drawToken(token, at) {
     ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
     ctx.restore();
     ctx.strokeStyle = hexAlpha(type.ink, 0.85);
-    ctx.lineWidth = 2;
+    ctx.lineWidth = token.level >= 3 ? 4 : 2;
     roundRect(-size / 2, -size / 2, size, size, 10);
     ctx.stroke();
+    const wash = tierTintOf(token.level);
+    if (wash) {
+      ctx.fillStyle = wash;
+      ctx.fill();
+    }
   }
+  drawTier(token.level, type.ink);
   paintPlate(`${type.styleLabel}·${type.motionLabel}`, -size / 2 + 12, 11);
   paintPlate(`${RANK[token.level] ?? token.level}品`, size / 2 - 12, 12);
   ctx.restore();
@@ -944,6 +1062,7 @@ function bind() {
   ui.speed.addEventListener('click', toggleSpeed);
   ui.restart.addEventListener('click', restart);
   ui.tutorialOk.addEventListener('click', () => {
+    clearSelection();
     ui.tutorial.hidden = true;
   });
   window.addEventListener('resize', resize);

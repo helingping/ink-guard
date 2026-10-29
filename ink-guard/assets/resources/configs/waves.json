@@ -1,12 +1,12 @@
 {
-  "comment": "Clear every wave while Adou still has HP to win. count is spawn count. speed is pixels per second. damage is dealt once when an enemy reaches the path end. roster cycles foe ids from foes.json; shi is ranged and reuses the bow shot.",
+  "comment": "Clear every wave while Adou still has HP to win. Foes march south from the north camp along board.json lanes (west river, center ford, east river) and damage Adou once at the shared seal. count is spawn count. speed is pixels per second. roster cycles foe ids from foes.json; shi is ranged and reuses the bow shot.",
   "firstDelay": 12,
   "gapSeconds": 4,
   "waves": [
-    { "id": 1, "count": 6, "hp": 72, "speed": 52, "damage": 1, "interval": 1.15, "roster": ["kou", "mao", "shi"] },
-    { "id": 2, "count": 8, "hp": 130, "speed": 62, "damage": 1, "interval": 0.98, "roster": ["kou", "shi", "mao", "shi"] },
-    { "id": 3, "count": 8, "hp": 210, "speed": 72, "damage": 2, "interval": 0.88, "roster": ["kou", "shi", "mao", "shi"] },
-    { "id": 4, "count": 10, "hp": 300, "speed": 82, "damage": 2, "interval": 0.78, "roster": ["mao", "shi", "kou", "shi"] },
-    { "id": 5, "count": 12, "hp": 400, "speed": 92, "damage": 3, "interval": 0.7, "roster": ["shi", "kou", "shi", "mao"] }
+    { "id": 1, "count": 6, "hp": 88, "speed": 44, "damage": 1, "interval": 1.2, "roster": ["kou", "mao", "shi"] },
+    { "id": 2, "count": 8, "hp": 140, "speed": 50, "damage": 1, "interval": 1.05, "roster": ["kou", "shi", "mao", "shi"] },
+    { "id": 3, "count": 8, "hp": 200, "speed": 56, "damage": 2, "interval": 0.96, "roster": ["kou", "shi", "mao", "shi"] },
+    { "id": 4, "count": 10, "hp": 260, "speed": 62, "damage": 2, "interval": 0.88, "roster": ["mao", "shi", "kou", "shi"] },
+    { "id": 5, "count": 12, "hp": 320, "speed": 68, "damage": 3, "interval": 0.8, "roster": ["shi", "kou", "shi", "mao"] }
   ]
 }
