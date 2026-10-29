@@ -7,6 +7,8 @@ native/
 node_modules/
 .idea/
 .vscode/
+!laya-ink-guard/.vscode/
+!laya-ink-guard/.vscode/settings.json
 .DS_Store
 Thumbs.db
 *.log

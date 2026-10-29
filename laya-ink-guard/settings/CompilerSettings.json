@@ -1,0 +1,5 @@
+{
+  "entry": "src/Main.ts",
+  "startupScript": "src/Main.ts",
+  "encoding": "utf8"
+}

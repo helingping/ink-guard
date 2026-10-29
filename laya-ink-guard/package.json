@@ -1,0 +1,16 @@
+{
+  "name": "laya-ink-guard",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Ink Guard for LayaAir 3.4.2. Built-in UI (Box, Button, Label, Image, Sprite), not FairyGUI.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --pretty false --noEmit",
+    "build": "esbuild src/Main.ts --bundle --outfile=preview/game.js --format=iife --target=es2017 --tsconfig=tsconfig.json",
+    "self-check": "tsx tools/self-check.ts",
+    "sync-configs": "node tools/sync-configs.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.0",
+    "typescript": "5.6.3"
+  }
+}
