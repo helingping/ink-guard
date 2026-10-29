@@ -1,5 +1,5 @@
 import type { AttackStyle, GameConfig, LevelStat, WaveDef } from '../config/ConfigTypes';
-import { benchPosition, buildPath, gridPosition, inRange, pointOnPath, type Polyline } from './geometry';
+import { benchPosition, boardLanes, buildPath, gridPosition, inRange, pointOnPath, type Polyline } from './geometry';
 import { mulberry32 } from './rng';
 
 export type Place = 'bench' | 'grid';
@@ -27,6 +27,8 @@ export interface Enemy {
   x: number;
   y: number;
   waveId: number;
+  /** Index into `board.lanes`. Foes on different lanes pressure different banks. */
+  lane: number;
 }
 
 export type ShotSide = 'player' | 'foe';
@@ -99,14 +101,13 @@ export class GameSim {
 
   private rng: () => number;
   private seq = 1;
-  private path: Polyline;
+  private lanes: Polyline[] = [];
   private spawnCooldown = 0;
   private cooldown = new Map<string, number>();
   private foeCooldown = new Map<string, number>();
 
   constructor(readonly config: GameConfig, seed: number | (() => number)) {
     this.rng = typeof seed === 'function' ? seed : mulberry32(seed);
-    this.path = buildPath(config.board.path);
     this.resetState();
   }
 
@@ -290,7 +291,11 @@ export class GameSim {
     this.spawnCooldown = 0;
     this.cooldown.clear();
     this.foeCooldown.clear();
-    this.path = buildPath(this.config.board.path);
+    this.lanes = boardLanes(this.config.board).map((points) => buildPath(points));
+  }
+
+  private laneOf(enemy: Enemy): Polyline {
+    return this.lanes[enemy.lane] ?? this.lanes[0];
   }
 
   private nextId(prefix: string): string {
@@ -346,7 +351,9 @@ export class GameSim {
   private spawnEnemy(wave: WaveDef): void {
     const roster = wave.roster.length > 0 ? wave.roster : [this.defaultFoe()];
     const kind = roster[this.spawnedInWave % roster.length];
-    const point = pointOnPath(this.path, 0);
+    const lane = (wave.id + this.spawnedInWave) % Math.max(1, this.lanes.length);
+    const road = this.lanes[lane] ?? this.lanes[0];
+    const point = pointOnPath(road, 0);
     this.enemies.push({
       id: this.nextId('e'),
       kind,
@@ -358,6 +365,7 @@ export class GameSim {
       x: point.x,
       y: point.y,
       waveId: wave.id,
+      lane,
     });
   }
 
@@ -600,11 +608,12 @@ export class GameSim {
       if (enemy.hp <= 0) {
         continue;
       }
+      const road = this.laneOf(enemy);
       enemy.distance += enemy.speed * dt;
-      if (enemy.distance >= this.path.total) {
+      if (enemy.distance >= road.total) {
         this.leak(enemy);
       } else {
-        const point = pointOnPath(this.path, enemy.distance);
+        const point = pointOnPath(road, enemy.distance);
         enemy.x = point.x;
         enemy.y = point.y;
       }
@@ -612,7 +621,8 @@ export class GameSim {
   }
 
   private leak(enemy: Enemy): void {
-    const end = this.path.points[this.path.points.length - 1];
+    const road = this.laneOf(enemy);
+    const end = road.points[road.points.length - 1];
     enemy.x = end.x;
     enemy.y = end.y;
     this.adouHp = Math.max(0, this.adouHp - enemy.damage);

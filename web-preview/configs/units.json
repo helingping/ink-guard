@@ -1,5 +1,5 @@
 {
-  "comment": "Calligraphy tokens. style melee hits when strike seconds elapse. style ranged fires a shot at shotSpeed pixels per second. motion must be unique. aspd is attacks per second. range is pixels in board.json space (canvas center, +y up).",
+  "comment": "Calligraphy tokens. style melee hits when strike seconds elapse. style ranged fires a shot at shotSpeed pixels per second. motion must be unique. aspd is attacks per second. range is pixels in board.json space (canvas center, +y up). Level-1 blade and rider only reach the south ford from the front rank. Spear reaches that ford from the second rank. Bow level-1 reaches the painted river from the back rank, and the north mouths from the front rank. hp is how much foe damage a deployed token can take; merging refills it. Foes copy level-1 range and the token's strike/shotSpeed.",
   "maxLevel": 4,
   "order": ["dao", "qiang", "gong", "qi"],
   "types": {
@@ -14,10 +14,10 @@
       "strike": 0.1,
       "shotSpeed": 0,
       "levels": [
-        { "level": 1, "atk": 14, "aspd": 0.9, "range": 190 },
-        { "level": 2, "atk": 34, "aspd": 1.0, "range": 280 },
-        { "level": 3, "atk": 78, "aspd": 1.1, "range": 330 },
-        { "level": 4, "atk": 176, "aspd": 1.2, "range": 380 }
+        { "level": 1, "atk": 14, "aspd": 0.9, "range": 160, "hp": 260 },
+        { "level": 2, "atk": 34, "aspd": 1.0, "range": 198, "hp": 620 },
+        { "level": 3, "atk": 78, "aspd": 1.1, "range": 236, "hp": 1480 },
+        { "level": 4, "atk": 176, "aspd": 1.2, "range": 276, "hp": 3400 }
       ]
     },
     "qiang": {
@@ -31,10 +31,10 @@
       "strike": 0.12,
       "shotSpeed": 0,
       "levels": [
-        { "level": 1, "atk": 12, "aspd": 0.85, "range": 280 },
-        { "level": 2, "atk": 28, "aspd": 0.95, "range": 330 },
-        { "level": 3, "atk": 64, "aspd": 1.05, "range": 380 },
-        { "level": 4, "atk": 144, "aspd": 1.15, "range": 430 }
+        { "level": 1, "atk": 12, "aspd": 0.85, "range": 200, "hp": 240 },
+        { "level": 2, "atk": 28, "aspd": 0.95, "range": 240, "hp": 580 },
+        { "level": 3, "atk": 64, "aspd": 1.05, "range": 280, "hp": 1380 },
+        { "level": 4, "atk": 144, "aspd": 1.15, "range": 320, "hp": 3200 }
       ]
     },
     "gong": {
@@ -48,10 +48,10 @@
       "strike": 0,
       "shotSpeed": 560,
       "levels": [
-        { "level": 1, "atk": 8, "aspd": 0.8, "range": 310 },
-        { "level": 2, "atk": 20, "aspd": 0.92, "range": 370 },
-        { "level": 3, "atk": 46, "aspd": 1.05, "range": 430 },
-        { "level": 4, "atk": 104, "aspd": 1.15, "range": 490 }
+        { "level": 1, "atk": 8, "aspd": 0.8, "range": 460, "hp": 180 },
+        { "level": 2, "atk": 20, "aspd": 0.92, "range": 510, "hp": 430 },
+        { "level": 3, "atk": 46, "aspd": 1.05, "range": 560, "hp": 1020 },
+        { "level": 4, "atk": 104, "aspd": 1.15, "range": 620, "hp": 2400 }
       ]
     },
     "qi": {
@@ -65,10 +65,10 @@
       "strike": 0.08,
       "shotSpeed": 0,
       "levels": [
-        { "level": 1, "atk": 10, "aspd": 1.25, "range": 200 },
-        { "level": 2, "atk": 24, "aspd": 1.4, "range": 280 },
-        { "level": 3, "atk": 54, "aspd": 1.55, "range": 330 },
-        { "level": 4, "atk": 120, "aspd": 1.7, "range": 380 }
+        { "level": 1, "atk": 10, "aspd": 1.25, "range": 156, "hp": 220 },
+        { "level": 2, "atk": 24, "aspd": 1.4, "range": 196, "hp": 520 },
+        { "level": 3, "atk": 54, "aspd": 1.55, "range": 234, "hp": 1240 },
+        { "level": 4, "atk": 120, "aspd": 1.7, "range": 272, "hp": 2900 }
       ]
     }
   }

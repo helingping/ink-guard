@@ -54,6 +54,13 @@ function needPoint(value: unknown, file: string): BoardPoint {
   return { x: needNumber(obj, 'x', file), y: needNumber(obj, 'y', file) };
 }
 
+function parsePolyline(value: unknown, file: string, label: string): BoardPoint[] {
+  if (!Array.isArray(value) || value.length < 2) {
+    fail(file, `${label} 至少要有两个点`);
+  }
+  return value.map((entry) => needPoint(entry, file));
+}
+
 function parseUnits(raw: unknown): UnitsConfig {
   const file = 'units.json';
   const obj = asRecord(raw, file);
@@ -311,10 +318,48 @@ function parseBoard(raw: unknown): BoardConfig {
     gridOrigin: needPoint(obj.gridOrigin, file),
     benchOrigin: needPoint(obj.benchOrigin, file),
     benchStep: needNumber(obj, 'benchStep', file),
-    path: needArray(obj, 'path', file).map((entry) => needPoint(entry, file)),
+    lanes: [],
+    path: [],
+    river: null,
+    camp: null,
     projectileSpeed: needNumber(obj, 'projectileSpeed', file),
     hitRadius: needNumber(obj, 'hitRadius', file),
   };
+  const lanes = obj.lanes === undefined
+    ? null
+    : needArray(obj, 'lanes', file).map((entry, index) => parsePolyline(entry, file, `lanes[${index}]`));
+  const explicitPath = obj.path === undefined ? null : parsePolyline(obj.path, file, 'path');
+  if (!lanes && !explicitPath) {
+    fail(file, '需要 path 或 lanes');
+  }
+  board.lanes = lanes ?? [explicitPath as BoardPoint[]];
+  if (board.lanes.length < 1) {
+    fail(file, '至少要有一条墨路');
+  }
+  const seal = board.lanes[0][board.lanes[0].length - 1];
+  for (let i = 1; i < board.lanes.length; i += 1) {
+    const end = board.lanes[i][board.lanes[i].length - 1];
+    if (Math.hypot(end.x - seal.x, end.y - seal.y) > 1) {
+      fail(file, '各条墨路必须汇入同一个终点');
+    }
+  }
+  board.path = board.lanes[Math.min(1, board.lanes.length - 1)];
+  if (obj.river !== undefined) {
+    const river = asRecord(obj.river, file);
+    const rect = {
+      x: needNumber(river, 'x', file),
+      y: needNumber(river, 'y', file),
+      w: needNumber(river, 'w', file),
+      h: needNumber(river, 'h', file),
+    };
+    if (rect.w <= 0 || rect.h <= 0) {
+      fail(file, 'river 宽高必须大于 0');
+    }
+    board.river = rect;
+  }
+  if (obj.camp !== undefined) {
+    board.camp = needPoint(obj.camp, file);
+  }
   if (board.designWidth < 320 || board.designHeight < 480) {
     fail(file, '设计分辨率过小');
   }
@@ -326,9 +371,6 @@ function parseBoard(raw: unknown): BoardConfig {
   }
   if (board.cellSize <= 0 || board.cellGap < 0 || board.benchStep <= 0) {
     fail(file, '格子尺寸不合法');
-  }
-  if (board.path.length < 2) {
-    fail(file, '路径至少要有两个点');
   }
   if (board.projectileSpeed <= 0 || board.hitRadius <= 0) {
     fail(file, '弹道速度和命中半径必须大于 0');
@@ -346,7 +388,12 @@ function parseBoard(raw: unknown): BoardConfig {
   };
   inside(board, board.benchOrigin, 28, file, '席位');
   inside(board, lastBench, 28, file, '末位席位');
-  board.path.forEach((point, index) => inside(board, point, 8, file, `路径点 ${index}`));
+  board.lanes.forEach((lane, laneIndex) => {
+    lane.forEach((point, index) => inside(board, point, 8, file, `墨路 ${laneIndex} 点 ${index}`));
+  });
+  if (board.camp) {
+    inside(board, board.camp, 8, file, '北营');
+  }
   return board;
 }
 

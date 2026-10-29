@@ -237,6 +237,13 @@ function inside(board, point, pad, file, label) {
   }
 }
 
+function parsePolyline(value, file, label) {
+  if (!Array.isArray(value) || value.length < 2) {
+    fail(file, `${label} 至少要有两个点`);
+  }
+  return value.map((entry) => needPoint(entry, file));
+}
+
 function parseBoard(raw) {
   const file = 'board.json';
   const obj = asRecord(raw, file);
@@ -251,10 +258,47 @@ function parseBoard(raw) {
     gridOrigin: needPoint(obj.gridOrigin, file),
     benchOrigin: needPoint(obj.benchOrigin, file),
     benchStep: needNumber(obj, 'benchStep', file),
-    path: needArray(obj, 'path', file).map((entry) => needPoint(entry, file)),
+    lanes: [],
+    path: [],
+    river: null,
+    camp: null,
     projectileSpeed: needNumber(obj, 'projectileSpeed', file),
     hitRadius: needNumber(obj, 'hitRadius', file),
   };
+  const lanes = obj.lanes === undefined
+    ? null
+    : needArray(obj, 'lanes', file).map((entry, index) => parsePolyline(entry, file, `lanes[${index}]`));
+  const explicitPath = obj.path === undefined ? null : parsePolyline(obj.path, file, 'path');
+  if (!lanes && !explicitPath) {
+    fail(file, '需要 path 或 lanes');
+  }
+  board.lanes = lanes ?? [explicitPath];
+  const seal = board.lanes[0][board.lanes[0].length - 1];
+  board.lanes.forEach((lane, index) => {
+    if (index === 0) {
+      return;
+    }
+    const end = lane[lane.length - 1];
+    if (Math.hypot(end.x - seal.x, end.y - seal.y) > 1) {
+      fail(file, '各条墨路必须汇入同一个终点');
+    }
+  });
+  board.path = board.lanes[Math.min(1, board.lanes.length - 1)];
+  if (obj.river !== undefined) {
+    const river = asRecord(obj.river, file);
+    board.river = {
+      x: needNumber(river, 'x', file),
+      y: needNumber(river, 'y', file),
+      w: needNumber(river, 'w', file),
+      h: needNumber(river, 'h', file),
+    };
+    if (board.river.w <= 0 || board.river.h <= 0) {
+      fail(file, 'river 宽高必须大于 0');
+    }
+  }
+  if (obj.camp !== undefined) {
+    board.camp = needPoint(obj.camp, file);
+  }
   if (board.designWidth < 320 || board.designHeight < 480) {
     fail(file, '设计分辨率过小');
   }
@@ -266,9 +310,6 @@ function parseBoard(raw) {
   }
   if (board.cellSize <= 0 || board.cellGap < 0 || board.benchStep <= 0) {
     fail(file, '格子尺寸不合法');
-  }
-  if (board.path.length < 2) {
-    fail(file, '路径至少要有两个点');
   }
   if (board.projectileSpeed <= 0 || board.hitRadius <= 0) {
     fail(file, '弹道速度和命中半径必须大于 0');
@@ -286,8 +327,17 @@ function parseBoard(raw) {
   };
   inside(board, board.benchOrigin, 28, file, '席位');
   inside(board, lastBench, 28, file, '末位席位');
-  board.path.forEach((point, index) => inside(board, point, 8, file, `路径点 ${index}`));
+  board.lanes.forEach((lane, laneIndex) => {
+    lane.forEach((point, index) => inside(board, point, 8, file, `墨路 ${laneIndex} 点 ${index}`));
+  });
+  if (board.camp) {
+    inside(board, board.camp, 8, file, '北营');
+  }
   return board;
+}
+
+export function boardLanes(board) {
+  return board.lanes?.length ? board.lanes : [board.path];
 }
 
 export function normalizeConfig(raw) {
@@ -397,7 +447,7 @@ export class GameSim {
   constructor(config, seed) {
     this.config = config;
     this.rng = typeof seed === 'function' ? seed : mulberry32(seed);
-    this.path = buildPath(config.board.path);
+    this.lanes = [];
     this.cooldown = new Map();
     this.resetState();
   }
@@ -589,7 +639,11 @@ export class GameSim {
     this.kindSerial = 0;
     this.spawnCooldown = 0;
     this.cooldown.clear();
-    this.path = buildPath(this.config.board.path);
+    this.lanes = boardLanes(this.config.board).map((points) => buildPath(points));
+  }
+
+  laneOf(enemy) {
+    return this.lanes[enemy.lane] ?? this.lanes[0];
   }
 
   nextId(prefix) {
@@ -643,9 +697,11 @@ export class GameSim {
   }
 
   spawnEnemy(wave) {
-    const point = pointOnPath(this.path, 0);
     const kind = ENEMY_KINDS[this.kindSerial % ENEMY_KINDS.length];
     this.kindSerial += 1;
+    const lane = (wave.id + this.spawnedInWave) % Math.max(1, this.lanes.length);
+    const road = this.lanes[lane] ?? this.lanes[0];
+    const point = pointOnPath(road, 0);
     this.enemies.push({
       id: this.nextId('e'),
       hp: wave.hp,
@@ -657,10 +713,11 @@ export class GameSim {
       y: point.y,
       waveId: wave.id,
       kind: kind.id,
+      lane,
       planted: false,
       windup: 0,
       released: false,
-      face: 0,
+      face: -Math.PI / 2,
     });
   }
 
@@ -783,13 +840,14 @@ export class GameSim {
       if (enemy.hp <= 0) {
         continue;
       }
+      const road = this.laneOf(enemy);
       if (enemyKind(enemy.kind).style === 'ranged') {
-        const remain = this.path.total - enemy.distance;
+        const remain = road.total - enemy.distance;
         if (!enemy.released && remain <= SHI_STANDOFF) {
           if (!enemy.planted) {
             enemy.planted = true;
-            enemy.distance = Math.max(0, this.path.total - SHI_STANDOFF);
-            const planted = pointOnPath(this.path, enemy.distance);
+            enemy.distance = Math.max(0, road.total - SHI_STANDOFF);
+            const planted = pointOnPath(road, enemy.distance);
             enemy.x = planted.x;
             enemy.y = planted.y;
             enemy.windup = 0;
@@ -804,10 +862,10 @@ export class GameSim {
       const prevX = enemy.x;
       const prevY = enemy.y;
       enemy.distance += enemy.speed * dt;
-      if (enemy.distance >= this.path.total) {
+      if (enemy.distance >= road.total) {
         this.leak(enemy);
       } else {
-        const point = pointOnPath(this.path, enemy.distance);
+        const point = pointOnPath(road, enemy.distance);
         enemy.x = point.x;
         enemy.y = point.y;
         if (Math.hypot(enemy.x - prevX, enemy.y - prevY) > 0.01) {
@@ -822,8 +880,9 @@ export class GameSim {
       return;
     }
     enemy.released = true;
-    const end = this.path.points[this.path.points.length - 1];
-    const remain = Math.max(0, this.path.total - enemy.distance);
+    const road = this.laneOf(enemy);
+    const end = road.points[road.points.length - 1];
+    const remain = Math.max(0, road.total - enemy.distance);
     const walkTime = remain / Math.max(1, enemy.speed);
     const flightTime = Math.max(0.16, walkTime - SHI_WINDUP);
     const dist = Math.max(1, Math.hypot(end.x - enemy.x, end.y - enemy.y));
@@ -868,7 +927,8 @@ export class GameSim {
   }
 
   leak(enemy) {
-    const end = this.path.points[this.path.points.length - 1];
+    const road = this.laneOf(enemy);
+    const end = road.points[road.points.length - 1];
     enemy.x = end.x;
     enemy.y = end.y;
     this.adouHp = Math.max(0, this.adouHp - enemy.damage);

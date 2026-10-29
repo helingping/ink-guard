@@ -7,24 +7,24 @@
       "glyph": "寇",
       "ink": "#6b2b28",
       "vfx": "dao",
-      "atk": 6,
-      "aspd": 0.45
+      "atk": 10,
+      "aspd": 0.55
     },
     "mao": {
       "displayName": "Pike",
       "glyph": "矛",
       "ink": "#145248",
       "vfx": "qiang",
-      "atk": 5,
-      "aspd": 0.4
+      "atk": 8,
+      "aspd": 0.5
     },
     "shi": {
       "displayName": "Arrow",
       "glyph": "矢",
       "ink": "#1d3a78",
       "vfx": "gong",
-      "atk": 4,
-      "aspd": 0.5
+      "atk": 9,
+      "aspd": 0.6
     }
   }
 }

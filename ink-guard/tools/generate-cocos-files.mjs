@@ -238,8 +238,9 @@ function writeImageMeta(rel, uuid, borders = null) {
 
 const UI = 33554432;
 const INK = [29, 43, 56];
-const BROWN = [74, 55, 40];
+const BROWN = [26, 18, 12];
 const CREAM = [255, 248, 234];
+const PAPER = [247, 241, 228];
 
 function v3(x, y, z = 0) {
   return { __type__: 'cc.Vec3', x, y, z };
@@ -347,7 +348,8 @@ function buildScene() {
     };
   }
 
-  function label(text, fontSize, rgb, fontUuid, id, wrap = true) {
+  function label(text, fontSize, rgb, fontUuid, id, wrap = true, outline = 'paper') {
+    const paper = outline !== 'ink';
     return {
       __type__: 'cc.Label',
       _name: '',
@@ -371,17 +373,17 @@ function buildScene() {
       _isSystemFontUsed: false,
       _spacingX: 0,
       _isItalic: false,
-      _isBold: false,
+      _isBold: true,
       _isUnderline: false,
       _underlineHeight: 2,
       _cacheMode: 0,
-      _enableOutline: false,
-      _outlineColor: color(0, 0, 0, 255),
-      _outlineWidth: 2,
-      _enableShadow: false,
-      _shadowColor: color(0, 0, 0, 255),
-      _shadowOffset: vec2(2, 2),
-      _shadowBlur: 2,
+      _enableOutline: true,
+      _outlineColor: paper ? color(PAPER[0], PAPER[1], PAPER[2], 235) : color(58, 24, 20, 230),
+      _outlineWidth: paper ? 3 : 2,
+      _enableShadow: paper,
+      _shadowColor: color(PAPER[0], PAPER[1], PAPER[2], 170),
+      _shadowOffset: vec2(0, 0),
+      _shadowBlur: paper ? 4 : 0,
       _id: id,
     };
   }
@@ -476,10 +478,10 @@ function buildScene() {
     };
   }
 
-  function addLabel(parent, name, text, x, y, w, h, fontUuid, fontSize, rgb, id, wrap = true) {
+  function addLabel(parent, name, text, x, y, w, h, fontUuid, fontSize, rgb, id, wrap = true, outline = 'paper') {
     const nodeIndex = makeNode(name, parent, x, y);
     comp(nodeIndex, ui(w, h, `ui-${id}`));
-    const labelIndex = comp(nodeIndex, label(text, fontSize, rgb, fontUuid, `label-${id}`, wrap));
+    const labelIndex = comp(nodeIndex, label(text, fontSize, rgb, fontUuid, `label-${id}`, wrap, outline));
     return { node: nodeIndex, label: labelIndex };
   }
 
@@ -495,7 +497,7 @@ function buildScene() {
     comp(nodeIndex, ui(w, h, `ui-${name}`));
     const spriteIndex = comp(nodeIndex, sprite(frame, 1, null, `sprite-${name}`));
     const buttonIndex = comp(nodeIndex, button(nodeIndex, handler, `button-${name}`));
-    const textRef = addLabel(nodeIndex, 'Text', text, 0, 1, w - 16, h - 10, FONT_BODY, fontSize, CREAM, name, false);
+    const textRef = addLabel(nodeIndex, 'Text', text, 0, 1, w - 16, h - 10, FONT_BODY, fontSize, CREAM, name, false, 'ink');
     return { node: nodeIndex, sprite: spriteIndex, button: buttonIndex, label: textRef.label };
   }
 
@@ -572,11 +574,25 @@ function buildScene() {
 
   const boardLayer = makeNode('Board', gameRoot, 0, 0, { nid: 'board-node-ink-guard' });
   comp(boardLayer, ui(0, 0, 'board-ui-ink-guard'));
-  addSprite(boardLayer, 'River', 0, 178, 540, 150, TEX.river, 0, null, 'river');
-  addSprite(boardLayer, 'BoardPlate', 0, -46, 500, 300, TEX.boardPlate, 1, null, 'plate');
-
+  const river = board.river ?? { x: 0, y: 86, w: 640, h: 156 };
+  addSprite(boardLayer, 'River', river.x, river.y, river.w, river.h, TEX.river, 0, null, 'river');
   const step = board.cellSize + board.cellGap;
-  const cell = 72;
+  const plateX = board.gridOrigin.x + ((board.gridCols - 1) * step) / 2;
+  const plateY = board.gridOrigin.y - ((board.gridRows - 1) * step) / 2;
+  addSprite(
+    boardLayer,
+    'BoardPlate',
+    plateX,
+    plateY,
+    (board.gridCols - 1) * step + board.cellSize + 56,
+    (board.gridRows - 1) * step + board.cellSize + 48,
+    TEX.boardPlate,
+    1,
+    null,
+    'plate',
+  );
+
+  const cell = board.cellSize;
   for (let i = 0; i < board.gridCols * board.gridRows; i += 1) {
     const col = i % board.gridCols;
     const row = Math.floor(i / board.gridCols);
@@ -594,7 +610,9 @@ function buildScene() {
     const slot = addSprite(boardLayer, `Bench${i}`, x, y, cell, cell, TEX.cell, 0, color(255, 248, 230, 220), `bench-${i}`);
     addSprite(slot.node, 'Mark', 0, 0, cell, cell, TEX.mark, 0, color(47, 107, 79, 230), `bmark-${i}`, { active: false });
   }
-  const gate = board.path[board.path.length - 1];
+  const laneSet = board.lanes ?? [board.path];
+  const gateLane = laneSet[Math.min(1, laneSet.length - 1)];
+  const gate = gateLane[gateLane.length - 1];
   const adouSeal = addSprite(boardLayer, 'AdouSeal', gate.x, gate.y, 108, 108, TEX.seal, 0, null, 'seal');
 
   const rangeNode = makeNode('Range', boardLayer, 0, 0, { active: false, nid: 'range-node' });
@@ -632,8 +650,8 @@ function buildScene() {
   const status = makeNode('StatusColumn', hudLayer, 0, 508);
   comp(status, ui(640, 132, 'status-ui'));
   comp(status, layout(2, 0, 6, 'status-layout'));
-  const wave = addLabel(status, 'Wave', '第 1 / 5 波 · 备墨 12s', 0, 40, 620, 32, FONT_BODY, 22, BROWN, 'wave', false);
-  const hpText = addLabel(status, 'HpText', '阿斗 24/24', 0, 4, 620, 28, FONT_BODY, 22, BROWN, 'hp', false);
+  const wave = addLabel(status, 'Wave', '第 1 / 5 波 · 备墨 12s', 0, 40, 640, 36, FONT_BODY, 24, BROWN, 'wave', false);
+  const hpText = addLabel(status, 'HpText', '阿斗 52/52', 0, 4, 640, 32, FONT_BODY, 24, BROWN, 'hp', false);
   const hpBar = addSprite(status, 'HpBar', 0, -36, 460, 22, TEX.hpTrack, 1, null, 'hp-track');
   const hpFillNode = addSprite(hpBar.node, 'Fill', -222, 0, 444, 14, TEX.hpFill, 1, null, 'hp-fill');
   objs[hpFillNode.node]._components.forEach((entry) => {
@@ -646,20 +664,20 @@ function buildScene() {
   const mantouRow = makeNode('MantouRow', hudLayer, 0, 400);
   comp(mantouRow, ui(640, 72, 'mantou-row-ui'));
   comp(mantouRow, layout(1, 18, 0, 'mantou-layout'));
-  const mantou = addLabel(mantouRow, 'Mantou', '馒头 140   +5/秒', -150, 0, 320, 48, FONT_BODY, 24, BROWN, 'mantou', false);
+  const mantou = addLabel(mantouRow, 'Mantou', '馒头 140   +5/秒', -150, 0, 340, 48, FONT_BODY, 26, BROWN, 'mantou', false);
   const recruit = addButton(mantouRow, 'Recruit', 180, 0, 176, 64, TEX.btnOn, 'onRecruitClick', '招募 15', 24);
 
-  const hint = addLabel(hudLayer, 'Hint', '招募字令，拖上阵。相同字令叠在一起升品，不同字令可以换位。', 0, -584, 660, 72, FONT_BODY, 20, BROWN, 'hint', true);
+  const hint = addLabel(hudLayer, 'Hint', '北营沿墨路南下。刀骑守前排，枪靠前，弓放后排。点空处取消射程。', 0, -584, 680, 80, FONT_BODY, 22, BROWN, 'hint', true);
   comp(hint.node, widget(20, { bottom: 20, hc: 0, w: 660, h: 72 }, 'hint-widget'));
 
-  const banner = addSprite(hudLayer, 'Banner', 0, 300, 360, 76, TEX.panel, 1, null, 'banner', { active: false });
+  const banner = addSprite(hudLayer, 'Banner', 0, 200, 360, 76, TEX.panel, 1, null, 'banner', { active: false });
   const bannerLabel = addLabel(banner.node, 'BannerText', '第 1 波', 0, 0, 320, 60, FONT_TITLE, 36, [180, 51, 42], 'banner-text', false);
 
-  const tutorial = addSprite(hudLayer, 'Tutorial', 0, -236, 640, 112, TEX.panel, 1, null, 'tutorial');
+  const tutorial = addSprite(hudLayer, 'Tutorial', 0, -500, 660, 120, TEX.panel, 1, null, 'tutorial');
   const tutorialLabel = addLabel(
     tutorial.node,
     'TutorialText',
-    '开局有两枚「刀」。拖到一起就升品。\n金色合成，青色换位，绿色空位。',
+    '开局有两枚「刀」。拖到一起就升品，圈纹会变粗。\n刀骑放前排，弓放后排。点空处取消射程。',
     -78,
     4,
     420,
@@ -877,20 +895,23 @@ function validateScene(data) {
     };
     walk(entry);
   });
+  const board = JSON.parse(readFileSync(join(root, 'assets/resources/configs/board.json'), 'utf8'));
   const names = data.filter((entry) => entry.__type__ === 'cc.Node').map((entry) => entry._name);
-  for (let i = 0; i < 15; i += 1) {
+  const cells = board.gridCols * board.gridRows;
+  for (let i = 0; i < cells; i += 1) {
     if (!names.includes(`Cell${i}`)) {
       throw new Error(`missing Cell${i}`);
     }
   }
-  for (let i = 0; i < 8; i += 1) {
+  for (let i = 0; i < board.benchSlots; i += 1) {
     if (!names.includes(`Bench${i}`)) {
       throw new Error(`missing Bench${i}`);
     }
   }
   const marks = names.filter((name) => name === 'Mark').length;
-  if (marks !== 23) {
-    throw new Error(`expected 23 marks, got ${marks}`);
+  const expectedMarks = cells + board.benchSlots;
+  if (marks !== expectedMarks) {
+    throw new Error(`expected ${expectedMarks} marks, got ${marks}`);
   }
   const buttons = data.filter((entry) => entry.__type__ === 'cc.Button');
   if (buttons.length !== 4) {
