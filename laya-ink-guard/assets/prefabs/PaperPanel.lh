@@ -1,0 +1,11 @@
+{
+  "_$ver": 1,
+  "_$id": "paper-1",
+  "_$type": "Image",
+  "name": "PaperPanel",
+  "skin": "res://c0ffee00-0000-4000-8000-000000000107",
+  "width": 688,
+  "height": 248,
+  "sizeGrid": "40,40,40,40",
+  "mouseEnabled": false
+}

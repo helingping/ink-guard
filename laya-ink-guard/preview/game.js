@@ -1298,10 +1298,11 @@
   var GUIDE_KEY = "ink-guard-merge-guide";
   var ROW_CAPTION = ["\u524D\u6392", "\u67AA", "\u5F13", "\u540E\u6392"];
   var InkGuardView = class {
-    constructor(config, art, fonts) {
+    constructor(config, art, fonts, sceneRoot = null) {
       this.config = config;
       this.art = art;
       this.fonts = fonts;
+      this.sceneRoot = sceneRoot;
       this.tokens = /* @__PURE__ */ new Map();
       this.enemies = /* @__PURE__ */ new Map();
       this.shots = /* @__PURE__ */ new Map();
@@ -1320,6 +1321,12 @@
       this.tutorial = new Laya.Box();
       this.overlay = new Laya.Box();
       this.hpFill = new Laya.Sprite();
+      this.hpTrack = new Laya.Sprite();
+      this.kindsLabel = null;
+      this.guideButton = null;
+      this.againButton = null;
+      this.recruitReadySkin = "";
+      this.recruitMutedSkin = "";
       this.drag = null;
       this.selectedId = null;
       this.timeScale = 1;
@@ -1347,10 +1354,15 @@
       this.speedPlate = speed.plate;
     }
     start() {
-      this.buildWorld();
-      this.buildHud();
-      this.buildTutorial();
-      this.buildOverlay();
+      var _a, _b;
+      if (!this.bindScene()) {
+        this.buildWorld();
+        this.buildHud();
+        this.buildTutorial();
+        this.buildOverlay();
+      }
+      this.recruitReadySkin = this.recruitButton.skin || "";
+      this.recruitMutedSkin = this.speedButton.skin || this.recruitReadySkin;
       this.guidePending = !guideSeen();
       if (this.guidePending) {
         this.grantGuide();
@@ -1360,8 +1372,157 @@
       Laya.stage.on(Laya.Event.MOUSE_UP, this, this.onUp);
       this.recruitButton.on(Laya.Event.CLICK, this, this.onRecruit);
       this.speedButton.on(Laya.Event.CLICK, this, this.onSpeed);
+      (_a = this.guideButton) == null ? void 0 : _a.on(Laya.Event.CLICK, this, this.onGuideDismiss);
+      (_b = this.againButton) == null ? void 0 : _b.on(Laya.Event.CLICK, this, this.onRestart);
       Laya.timer.frameLoop(1, this, this.onFrame);
       this.syncHud();
+    }
+    /** Use the nodes saved in Main.ls. Returns false when this run has no scene. */
+    bindScene() {
+      const root = this.sceneRoot;
+      if (!root) {
+        return false;
+      }
+      const required = [
+        "World",
+        "Board",
+        "Range",
+        "Actors",
+        "Shots",
+        "Drag",
+        "Floats",
+        "Hud",
+        "Wave",
+        "HpText",
+        "HpFill",
+        "Mantou",
+        "Hint",
+        "Banner",
+        "Recruit",
+        "Speed",
+        "Tutorial",
+        "TutorialLabel",
+        "GuideOk",
+        "Overlay",
+        "OverlayTitle",
+        "OverlayBody",
+        "Again"
+      ];
+      if (required.some((name) => !findNode(root, name))) {
+        return false;
+      }
+      const recruitHit = findNode(findNode(root, "Recruit"), "Button");
+      const speedHit = findNode(findNode(root, "Speed"), "Button");
+      if (!recruitHit || !speedHit) {
+        return false;
+      }
+      this.world = asSprite(findNode(root, "World"));
+      this.boardLayer = asSprite(findNode(root, "Board"));
+      this.rangeLayer = asSprite(findNode(root, "Range"));
+      this.actorLayer = asSprite(findNode(root, "Actors"));
+      this.shotLayer = asSprite(findNode(root, "Shots"));
+      this.dragLayer = asSprite(findNode(root, "Drag"));
+      this.floatLayer = asSprite(findNode(root, "Floats"));
+      this.hud = asBox(findNode(root, "Hud"));
+      this.waveLabel = asLabel(findNode(root, "Wave"));
+      this.hpText = asLabel(findNode(root, "HpText"));
+      this.hpFill = asSprite(findNode(root, "HpFill"));
+      this.mantouLabel = asLabel(findNode(root, "Mantou"));
+      this.hintLabel = asLabel(findNode(root, "Hint"));
+      this.banner = asLabel(findNode(root, "Banner"));
+      this.recruitPlate = asBox(findNode(root, "Recruit"));
+      this.recruitButton = asButton(recruitHit);
+      this.speedPlate = asBox(findNode(root, "Speed"));
+      this.speedButton = asButton(speedHit);
+      this.tutorial = asBox(findNode(root, "Tutorial"));
+      this.tutorialLabel = asLabel(findNode(root, "TutorialLabel"));
+      this.guideButton = asButton(findNode(root, "GuideOk"));
+      this.overlay = asBox(findNode(root, "Overlay"));
+      this.overlayTitle = asLabel(findNode(root, "OverlayTitle"));
+      this.overlayBody = asLabel(findNode(root, "OverlayBody"));
+      this.againButton = asButton(findNode(root, "Again"));
+      this.world.mouseEnabled = false;
+      this.world.mouseThrough = true;
+      for (const layer of [this.boardLayer, this.rangeLayer, this.actorLayer, this.shotLayer, this.dragLayer, this.floatLayer]) {
+        layer.mouseEnabled = false;
+        layer.mouseThrough = true;
+      }
+      this.hpFill.mouseEnabled = false;
+      const track = findNode(root, "HpTrack");
+      if (track) {
+        this.hpTrack = asSprite(track);
+        this.hpTrack.mouseEnabled = false;
+        this.hpTrack.graphics.drawRoundRect(0, 0, 280, 20, 8, 8, 8, 8, "#d5c4a4", Ink.brown, 2);
+      }
+      const kinds = findNode(root, "Kinds");
+      if (kinds) {
+        this.kindsLabel = asLabel(kinds);
+        this.kindsLabel.text = this.kindLine();
+      }
+      const title = findNode(root, "Title");
+      if (title) {
+        asLabel(title).font = this.fonts.title;
+      }
+      const sample = findNode(root, "UnitGlyph");
+      if (sample) {
+        asSprite(sample).visible = false;
+        asSprite(sample).mouseEnabled = false;
+      }
+      this.applySceneFonts();
+      this.tutorial.graphics.drawRoundRect(0, 0, 688, 118, 16, 16, 16, 16, hexAlpha(Ink.paper, 0.96), Ink.gold, 3);
+      this.overlay.graphics.drawRect(0, 0, this.width, this.height, hexAlpha(Ink.ink, 0.55), null, 0);
+      const card = findNode(root, "OverlayCard");
+      if (card) {
+        const plate = asSprite(card);
+        plate.graphics.drawRoundRect(0, 0, 520, 320, 18, 18, 18, 18, Ink.paper, Ink.gold, 3);
+        plate.mouseEnabled = true;
+      }
+      this.paintLanes();
+      this.placeMarksOnly();
+      return true;
+    }
+    applySceneFonts() {
+      this.banner.font = this.fonts.title;
+      this.overlayTitle.font = this.fonts.title;
+      for (const label of [
+        this.waveLabel,
+        this.hpText,
+        this.mantouLabel,
+        this.hintLabel,
+        this.tutorialLabel,
+        this.overlayBody,
+        this.kindsLabel
+      ]) {
+        if (label) {
+          label.font = this.fonts.body;
+        }
+      }
+      this.recruitButton.labelFont = this.fonts.body;
+      this.speedButton.labelFont = this.fonts.body;
+      if (this.guideButton) {
+        this.guideButton.labelFont = this.fonts.body;
+      }
+      if (this.againButton) {
+        this.againButton.labelFont = this.fonts.body;
+      }
+    }
+    placeMarksOnly() {
+      const board = this.config.board;
+      const gridCount = board.gridCols * board.gridRows;
+      for (let i = 0; i < gridCount; i += 1) {
+        this.addMark("grid", i, gridPosition(board, i));
+      }
+      for (let i = 0; i < board.benchSlots; i += 1) {
+        this.addMark("bench", i, benchPosition(board, i));
+      }
+    }
+    addMark(place, slot, point) {
+      const at = this.toStage(point.x, point.y);
+      const mark = new Laya.Sprite();
+      mark.pos(at.x, at.y);
+      mark.mouseEnabled = false;
+      this.boardLayer.addChild(mark);
+      this.slotMarks.push({ place, slot, node: mark });
     }
     buildWorld() {
       const bg = this.makeImage("textures/bg-paper.png", this.width, this.height, 0);
@@ -1426,13 +1587,12 @@
       kinds.align = "left";
       kinds.pos(36, 146);
       this.hud.addChild(kinds);
-      const track = new Laya.Sprite();
-      track.pos(36, 184);
-      track.mouseEnabled = false;
-      track.graphics.drawRoundRect(0, 0, 280, 20, 8, 8, 8, 8, "#d5c4a4", Ink.brown, 2);
+      this.hpTrack.pos(36, 184);
+      this.hpTrack.mouseEnabled = false;
+      this.hpTrack.graphics.drawRoundRect(0, 0, 280, 20, 8, 8, 8, 8, "#d5c4a4", Ink.brown, 2);
       this.hpFill.pos(36, 184);
       this.hpFill.mouseEnabled = false;
-      this.hud.addChild(track);
+      this.hud.addChild(this.hpTrack);
       this.hud.addChild(this.hpFill);
       this.hpText.anchorX = 0;
       this.hpText.align = "left";
@@ -1468,7 +1628,7 @@
       this.tutorial.addChild(this.tutorialLabel);
       const ok = this.makeButton("\u77E5\u9053\u4E86", 160, 44, Ink.moss);
       ok.plate.pos(264, 64);
-      ok.button.on(Laya.Event.CLICK, this, this.onGuideDismiss);
+      this.guideButton = ok.button;
       this.tutorial.addChild(ok.plate);
       this.tutorial.visible = this.guidePending;
       Laya.stage.addChild(this.tutorial);
@@ -1491,7 +1651,7 @@
       card.addChild(this.overlayBody);
       const again = this.makeButton("\u518D\u5B88\u4E00\u9635", 220, 58, Ink.cinnabar);
       again.plate.pos(150, 230);
-      again.button.on(Laya.Event.CLICK, this, this.onRestart);
+      this.againButton = again.button;
       card.addChild(again.plate);
       this.overlay.addChild(card);
       Laya.stage.addChild(this.overlay);
@@ -1550,11 +1710,7 @@
         cell.mouseEnabled = false;
         this.boardLayer.addChild(cell);
       }
-      const mark = new Laya.Sprite();
-      mark.pos(at.x, at.y);
-      mark.mouseEnabled = false;
-      this.boardLayer.addChild(mark);
-      this.slotMarks.push({ place, slot, node: mark });
+      this.addMark(place, slot, point);
     }
     paintSeals() {
       var _a, _b;
@@ -1948,7 +2104,14 @@
       const cost = this.sim.nextCost();
       this.recruitButton.label = `\u62DB\u52DF ${cost}`;
       const ready = this.sim.phase === "playing" && this.sim.mantou >= cost && this.sim.hasBenchRoom();
-      this.paintPlate(this.recruitPlate, 188, 58, ready ? Ink.cinnabar : "#8d8274");
+      if (this.recruitReadySkin) {
+        const next = ready ? this.recruitReadySkin : this.recruitMutedSkin;
+        if (next && this.recruitButton.skin !== next) {
+          this.recruitButton.skin = next;
+        }
+      } else {
+        this.paintPlate(this.recruitPlate, 188, 58, ready ? Ink.cinnabar : "#8d8274");
+      }
       const head = `\u7B2C ${this.sim.waveNumber} / ${this.sim.waveTotal} \u6CE2`;
       if (this.sim.phase !== "playing") {
         this.waveLabel.text = head;
@@ -2194,6 +2357,33 @@
       return image;
     }
   };
+  function findNode(root, name) {
+    if (!root) {
+      return null;
+    }
+    if (root.name === name) {
+      return root;
+    }
+    for (let i = 0; i < root.numChildren; i += 1) {
+      const found = findNode(root.getChildAt(i), name);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
+  }
+  function asSprite(node) {
+    return node;
+  }
+  function asBox(node) {
+    return node;
+  }
+  function asLabel(node) {
+    return node;
+  }
+  function asButton(node) {
+    return node;
+  }
   function seed() {
     return Date.now() % 2147483647;
   }
@@ -2209,26 +2399,34 @@
   var { regClass } = Laya;
   var Main = class extends Laya.Script {
     onAwake() {
-      bootInkGuard();
+      bootInkGuard(this.owner);
     }
   };
   Main = __decorateClass([
-    regClass()
+    regClass("c0ffee00-0000-4000-8000-000000000002")
   ], Main);
+  async function main() {
+    if (typeof window !== "undefined" && window.__INK_GUARD_STANDALONE__) {
+      return;
+    }
+    const startup = Laya.PlayerConfig.startupScene;
+    const url = startup && startup.length > 0 ? startup : "scenes/Main.ls";
+    await Laya.Scene.open(url, true);
+  }
   var started = false;
-  function bootInkGuard() {
+  function bootInkGuard(sceneRoot) {
     if (started) {
       return;
     }
     started = true;
     if (Laya.stage) {
       fitStage();
-      void launch();
+      void launch(sceneRoot);
       return;
     }
     void Laya.init(720, 1280).then(() => {
       fitStage();
-      return launch();
+      return launch(sceneRoot);
     }).catch((error) => {
       started = false;
       report(error);
@@ -2244,7 +2442,7 @@
       Laya.stage.size(720, 1280);
     }
   }
-  async function launch() {
+  async function launch(sceneRoot) {
     const loading = statusLabel("\u7814\u58A8\u4E2D\u2026");
     try {
       const fonts = await loadFonts();
@@ -2252,7 +2450,7 @@
       const art = await loadArt();
       loading.removeSelf();
       loading.destroy();
-      new InkGuardView(config, art, fonts).start();
+      new InkGuardView(config, art, fonts, sceneRoot != null ? sceneRoot : null).start();
     } catch (error) {
       loading.text = error instanceof Error ? error.message : "\u914D\u7F6E\u6CA1\u6709\u8BFB\u51FA\u6765";
       loading.color = "#b4332a";

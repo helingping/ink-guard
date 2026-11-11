@@ -176,6 +176,65 @@ check(smart.phase === "win" && smart.hp > 0 && smart.merges > 0, "merging clears
 const placed = run(config, 1, "place", 420);
 check(placed.phase === "lose", "level-1 tokens alone lose");
 
+const layaRoot = join(root, "laya-ink-guard");
+const scene = JSON.parse(readFileSync(join(layaRoot, "assets/scenes/Main.ls"), "utf8")) as {
+  _$ver?: number;
+  _$type?: string;
+  name?: string;
+  _$comp?: Array<{ _$type?: string }>;
+  _$child?: unknown[];
+};
+const sceneMeta = JSON.parse(readFileSync(join(layaRoot, "assets/scenes/Main.ls.meta"), "utf8")) as { uuid?: string };
+const scriptMeta = JSON.parse(readFileSync(join(layaRoot, "src/Main.ts.meta"), "utf8")) as { uuid?: string };
+const buildSettings = JSON.parse(readFileSync(join(layaRoot, "settings/BuildSettings.json"), "utf8")) as { startupScene?: string };
+const compilerSettings = JSON.parse(readFileSync(join(layaRoot, "settings/CompilerSettings.json"), "utf8")) as { mainScript?: string };
+const mainSource = readFileSync(join(layaRoot, "src/Main.ts"), "utf8");
+check(scene._$ver === 1 && scene._$type === "Scene" && scene.name === "Main", "startup scene is a LayaAir 3 hierarchy");
+check(scene._$comp?.[0]?._$type === scriptMeta.uuid, "Main.ls component points at Main.ts.meta");
+check(mainSource.includes(`@regClass("${scriptMeta.uuid}")`), "Main.ts registers the same script id");
+check(buildSettings.startupScene === `res://${sceneMeta.uuid}`, "BuildSettings startupScene is Main.ls");
+check(compilerSettings.mainScript === "src/Main.ts" && mainSource.includes("export async function main"), "startup script opens the scene");
+
+const names = new Set<string>();
+const prefabIds = new Set<string>();
+function walk(node: unknown): void {
+  if (!node || typeof node !== "object") {
+    return;
+  }
+  const record = node as { name?: string; _$prefab?: string; _$child?: unknown[] };
+  if (record.name) {
+    names.add(record.name);
+  }
+  if (record._$prefab) {
+    prefabIds.add(record._$prefab);
+  }
+  for (const child of record._$child ?? []) {
+    walk(child);
+  }
+}
+walk(scene);
+for (const name of ["Hud", "Paper", "Recruit", "Speed", "Cell0", "Cell19", "Bench0", "Bench7", "CampSeal", "AdouSeal", "UnitGlyph", "GuideOk", "Again"]) {
+  check(names.has(name), `scene contains ${name}`);
+}
+const prefabFile: Record<string, string> = {
+  "c0ffee00-0000-4000-8000-000000000010": "PaperPanel.lh",
+  "c0ffee00-0000-4000-8000-000000000011": "RecruitButton.lh",
+  "c0ffee00-0000-4000-8000-000000000012": "SpeedButton.lh",
+  "c0ffee00-0000-4000-8000-000000000013": "CellMarker.lh",
+  "c0ffee00-0000-4000-8000-000000000014": "SealMark.lh",
+  "c0ffee00-0000-4000-8000-000000000015": "UnitGlyph.lh",
+};
+for (const id of prefabIds) {
+  const file = prefabFile[id];
+  check(Boolean(file), `scene prefab ${id} is one of the HUD prefabs`);
+  if (!file) {
+    continue;
+  }
+  const prefab = JSON.parse(readFileSync(join(layaRoot, "assets/prefabs", file), "utf8")) as { _$ver?: number; _$type?: string };
+  const prefabMeta = JSON.parse(readFileSync(join(layaRoot, "assets/prefabs", `${file}.meta`), "utf8")) as { uuid?: string };
+  check(prefab._$ver === 1 && Boolean(prefab._$type) && prefabMeta.uuid === id, `${file} is a versioned prefab`);
+}
+
 if (failures.length > 0) {
   console.error(`\n${failures.length} check(s) failed`);
   process.exitCode = 1;

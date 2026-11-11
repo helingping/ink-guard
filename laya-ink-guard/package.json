@@ -7,6 +7,7 @@
     "typecheck": "tsc -p tsconfig.json --pretty false --noEmit",
     "build": "esbuild src/Main.ts --bundle --outfile=preview/game.js --format=iife --target=es2017 --tsconfig=tsconfig.json",
     "self-check": "tsx tools/self-check.ts",
+    "scene": "node tools/generate-laya-scene.mjs",
     "sync-configs": "node tools/sync-configs.mjs"
   },
   "devDependencies": {

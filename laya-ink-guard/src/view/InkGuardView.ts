@@ -64,7 +64,9 @@ interface Impact {
 
 /**
  * Screen built from LayaAir's own 2D components: Box, Button, Label, Image, Sprite.
- * FairyGUI is not used. Tokens and foes are created as they spawn; the HUD is a Box.
+ * FairyGUI is not used. When Play opens assets/scenes/Main.ls, the HUD, cells, and
+ * seals already in that scene are reused. The browser preview has no scene, so the
+ * same pieces are created here. Tokens and foes are still spawned as they appear.
  */
 export class InkGuardView {
   private readonly sim: GameSim;
@@ -78,30 +80,36 @@ export class InkGuardView {
   private readonly impacts: Impact[] = [];
   private readonly seenShots = new Set<string>();
 
-  private readonly world = new Laya.Sprite();
-  private readonly boardLayer = new Laya.Sprite();
-  private readonly rangeLayer = new Laya.Sprite();
-  private readonly actorLayer = new Laya.Sprite();
-  private readonly shotLayer = new Laya.Sprite();
-  private readonly dragLayer = new Laya.Sprite();
-  private readonly floatLayer = new Laya.Sprite();
-  private readonly hud = new Laya.Box();
-  private readonly tutorial = new Laya.Box();
-  private readonly overlay = new Laya.Box();
-  private readonly banner: Laya.Label;
+  private world = new Laya.Sprite();
+  private boardLayer = new Laya.Sprite();
+  private rangeLayer = new Laya.Sprite();
+  private actorLayer = new Laya.Sprite();
+  private shotLayer = new Laya.Sprite();
+  private dragLayer = new Laya.Sprite();
+  private floatLayer = new Laya.Sprite();
+  private hud = new Laya.Box();
+  private tutorial = new Laya.Box();
+  private overlay = new Laya.Box();
+  private banner: Laya.Label;
 
-  private readonly waveLabel: Laya.Label;
-  private readonly hpText: Laya.Label;
-  private readonly hpFill = new Laya.Sprite();
-  private readonly mantouLabel: Laya.Label;
-  private readonly hintLabel: Laya.Label;
-  private readonly recruitButton: Laya.Button;
-  private readonly recruitPlate: Laya.Box;
-  private readonly speedButton: Laya.Button;
-  private readonly speedPlate: Laya.Box;
-  private readonly tutorialLabel: Laya.Label;
-  private readonly overlayTitle: Laya.Label;
-  private readonly overlayBody: Laya.Label;
+  private waveLabel: Laya.Label;
+  private hpText: Laya.Label;
+  private hpFill = new Laya.Sprite();
+  private hpTrack = new Laya.Sprite();
+  private mantouLabel: Laya.Label;
+  private hintLabel: Laya.Label;
+  private kindsLabel: Laya.Label | null = null;
+  private recruitButton: Laya.Button;
+  private recruitPlate: Laya.Box;
+  private speedButton: Laya.Button;
+  private speedPlate: Laya.Box;
+  private tutorialLabel: Laya.Label;
+  private overlayTitle: Laya.Label;
+  private overlayBody: Laya.Label;
+  private guideButton: Laya.Button | null = null;
+  private againButton: Laya.Button | null = null;
+  private recruitReadySkin = "";
+  private recruitMutedSkin = "";
 
   private drag: Drag | null = null;
   private selectedId: string | null = null;
@@ -116,6 +124,7 @@ export class InkGuardView {
     private readonly config: GameConfig,
     private readonly art: ArtBook,
     private readonly fonts: Fonts,
+    private readonly sceneRoot: Laya.Node | null = null,
   ) {
     this.width = config.board.designWidth;
     this.height = config.board.designHeight;
@@ -137,10 +146,14 @@ export class InkGuardView {
   }
 
   start(): void {
-    this.buildWorld();
-    this.buildHud();
-    this.buildTutorial();
-    this.buildOverlay();
+    if (!this.bindScene()) {
+      this.buildWorld();
+      this.buildHud();
+      this.buildTutorial();
+      this.buildOverlay();
+    }
+    this.recruitReadySkin = this.recruitButton.skin || "";
+    this.recruitMutedSkin = this.speedButton.skin || this.recruitReadySkin;
     this.guidePending = !guideSeen();
     if (this.guidePending) {
       this.grantGuide();
@@ -150,8 +163,144 @@ export class InkGuardView {
     Laya.stage.on(Laya.Event.MOUSE_UP, this, this.onUp);
     this.recruitButton.on(Laya.Event.CLICK, this, this.onRecruit);
     this.speedButton.on(Laya.Event.CLICK, this, this.onSpeed);
+    this.guideButton?.on(Laya.Event.CLICK, this, this.onGuideDismiss);
+    this.againButton?.on(Laya.Event.CLICK, this, this.onRestart);
     Laya.timer.frameLoop(1, this, this.onFrame);
     this.syncHud();
+  }
+
+  /** Use the nodes saved in Main.ls. Returns false when this run has no scene. */
+  private bindScene(): boolean {
+    const root = this.sceneRoot;
+    if (!root) {
+      return false;
+    }
+    const required = [
+      "World", "Board", "Range", "Actors", "Shots", "Drag", "Floats",
+      "Hud", "Wave", "HpText", "HpFill", "Mantou", "Hint", "Banner",
+      "Recruit", "Speed", "Tutorial", "TutorialLabel", "GuideOk",
+      "Overlay", "OverlayTitle", "OverlayBody", "Again",
+    ];
+    if (required.some((name) => !findNode(root, name))) {
+      return false;
+    }
+    const recruitHit = findNode(findNode(root, "Recruit"), "Button");
+    const speedHit = findNode(findNode(root, "Speed"), "Button");
+    if (!recruitHit || !speedHit) {
+      return false;
+    }
+
+    this.world = asSprite(findNode(root, "World"));
+    this.boardLayer = asSprite(findNode(root, "Board"));
+    this.rangeLayer = asSprite(findNode(root, "Range"));
+    this.actorLayer = asSprite(findNode(root, "Actors"));
+    this.shotLayer = asSprite(findNode(root, "Shots"));
+    this.dragLayer = asSprite(findNode(root, "Drag"));
+    this.floatLayer = asSprite(findNode(root, "Floats"));
+    this.hud = asBox(findNode(root, "Hud"));
+    this.waveLabel = asLabel(findNode(root, "Wave"));
+    this.hpText = asLabel(findNode(root, "HpText"));
+    this.hpFill = asSprite(findNode(root, "HpFill"));
+    this.mantouLabel = asLabel(findNode(root, "Mantou"));
+    this.hintLabel = asLabel(findNode(root, "Hint"));
+    this.banner = asLabel(findNode(root, "Banner"));
+    this.recruitPlate = asBox(findNode(root, "Recruit"));
+    this.recruitButton = asButton(recruitHit);
+    this.speedPlate = asBox(findNode(root, "Speed"));
+    this.speedButton = asButton(speedHit);
+    this.tutorial = asBox(findNode(root, "Tutorial"));
+    this.tutorialLabel = asLabel(findNode(root, "TutorialLabel"));
+    this.guideButton = asButton(findNode(root, "GuideOk"));
+    this.overlay = asBox(findNode(root, "Overlay"));
+    this.overlayTitle = asLabel(findNode(root, "OverlayTitle"));
+    this.overlayBody = asLabel(findNode(root, "OverlayBody"));
+    this.againButton = asButton(findNode(root, "Again"));
+
+    this.world.mouseEnabled = false;
+    this.world.mouseThrough = true;
+    for (const layer of [this.boardLayer, this.rangeLayer, this.actorLayer, this.shotLayer, this.dragLayer, this.floatLayer]) {
+      layer.mouseEnabled = false;
+      layer.mouseThrough = true;
+    }
+    this.hpFill.mouseEnabled = false;
+    const track = findNode(root, "HpTrack");
+    if (track) {
+      this.hpTrack = asSprite(track);
+      this.hpTrack.mouseEnabled = false;
+      this.hpTrack.graphics.drawRoundRect(0, 0, 280, 20, 8, 8, 8, 8, "#d5c4a4", Ink.brown, 2);
+    }
+    const kinds = findNode(root, "Kinds");
+    if (kinds) {
+      this.kindsLabel = asLabel(kinds);
+      this.kindsLabel.text = this.kindLine();
+    }
+    const title = findNode(root, "Title");
+    if (title) {
+      asLabel(title).font = this.fonts.title;
+    }
+    const sample = findNode(root, "UnitGlyph");
+    if (sample) {
+      asSprite(sample).visible = false;
+      asSprite(sample).mouseEnabled = false;
+    }
+    this.applySceneFonts();
+    this.tutorial.graphics.drawRoundRect(0, 0, 688, 118, 16, 16, 16, 16, hexAlpha(Ink.paper, 0.96), Ink.gold, 3);
+    this.overlay.graphics.drawRect(0, 0, this.width, this.height, hexAlpha(Ink.ink, 0.55), null, 0);
+    const card = findNode(root, "OverlayCard");
+    if (card) {
+      const plate = asSprite(card);
+      plate.graphics.drawRoundRect(0, 0, 520, 320, 18, 18, 18, 18, Ink.paper, Ink.gold, 3);
+      plate.mouseEnabled = true;
+    }
+    this.paintLanes();
+    this.placeMarksOnly();
+    return true;
+  }
+
+  private applySceneFonts(): void {
+    this.banner.font = this.fonts.title;
+    this.overlayTitle.font = this.fonts.title;
+    for (const label of [
+      this.waveLabel,
+      this.hpText,
+      this.mantouLabel,
+      this.hintLabel,
+      this.tutorialLabel,
+      this.overlayBody,
+      this.kindsLabel,
+    ]) {
+      if (label) {
+        label.font = this.fonts.body;
+      }
+    }
+    this.recruitButton.labelFont = this.fonts.body;
+    this.speedButton.labelFont = this.fonts.body;
+    if (this.guideButton) {
+      this.guideButton.labelFont = this.fonts.body;
+    }
+    if (this.againButton) {
+      this.againButton.labelFont = this.fonts.body;
+    }
+  }
+
+  private placeMarksOnly(): void {
+    const board = this.config.board;
+    const gridCount = board.gridCols * board.gridRows;
+    for (let i = 0; i < gridCount; i += 1) {
+      this.addMark("grid", i, gridPosition(board, i));
+    }
+    for (let i = 0; i < board.benchSlots; i += 1) {
+      this.addMark("bench", i, benchPosition(board, i));
+    }
+  }
+
+  private addMark(place: Place, slot: number, point: { x: number; y: number }): void {
+    const at = this.toStage(point.x, point.y);
+    const mark = new Laya.Sprite();
+    mark.pos(at.x, at.y);
+    mark.mouseEnabled = false;
+    this.boardLayer.addChild(mark);
+    this.slotMarks.push({ place, slot, node: mark });
   }
 
   private buildWorld(): void {
@@ -222,13 +371,12 @@ export class InkGuardView {
     kinds.pos(36, 146);
     this.hud.addChild(kinds);
 
-    const track = new Laya.Sprite();
-    track.pos(36, 184);
-    track.mouseEnabled = false;
-    track.graphics.drawRoundRect(0, 0, 280, 20, 8, 8, 8, 8, "#d5c4a4", Ink.brown, 2);
+    this.hpTrack.pos(36, 184);
+    this.hpTrack.mouseEnabled = false;
+    this.hpTrack.graphics.drawRoundRect(0, 0, 280, 20, 8, 8, 8, 8, "#d5c4a4", Ink.brown, 2);
     this.hpFill.pos(36, 184);
     this.hpFill.mouseEnabled = false;
-    this.hud.addChild(track);
+    this.hud.addChild(this.hpTrack);
     this.hud.addChild(this.hpFill);
     this.hpText.anchorX = 0;
     this.hpText.align = "left";
@@ -269,7 +417,7 @@ export class InkGuardView {
     this.tutorial.addChild(this.tutorialLabel);
     const ok = this.makeButton("知道了", 160, 44, Ink.moss);
     ok.plate.pos(264, 64);
-    ok.button.on(Laya.Event.CLICK, this, this.onGuideDismiss);
+    this.guideButton = ok.button;
     this.tutorial.addChild(ok.plate);
     this.tutorial.visible = this.guidePending;
     Laya.stage.addChild(this.tutorial);
@@ -293,7 +441,7 @@ export class InkGuardView {
     card.addChild(this.overlayBody);
     const again = this.makeButton("再守一阵", 220, 58, Ink.cinnabar);
     again.plate.pos(150, 230);
-    again.button.on(Laya.Event.CLICK, this, this.onRestart);
+    this.againButton = again.button;
     card.addChild(again.plate);
     this.overlay.addChild(card);
     Laya.stage.addChild(this.overlay);
@@ -356,11 +504,7 @@ export class InkGuardView {
       cell.mouseEnabled = false;
       this.boardLayer.addChild(cell);
     }
-    const mark = new Laya.Sprite();
-    mark.pos(at.x, at.y);
-    mark.mouseEnabled = false;
-    this.boardLayer.addChild(mark);
-    this.slotMarks.push({ place, slot, node: mark });
+    this.addMark(place, slot, point);
   }
 
   private paintSeals(): void {
@@ -766,7 +910,14 @@ export class InkGuardView {
     const cost = this.sim.nextCost();
     this.recruitButton.label = `招募 ${cost}`;
     const ready = this.sim.phase === "playing" && this.sim.mantou >= cost && this.sim.hasBenchRoom();
-    this.paintPlate(this.recruitPlate, 188, 58, ready ? Ink.cinnabar : "#8d8274");
+    if (this.recruitReadySkin) {
+      const next = ready ? this.recruitReadySkin : this.recruitMutedSkin;
+      if (next && this.recruitButton.skin !== next) {
+        this.recruitButton.skin = next;
+      }
+    } else {
+      this.paintPlate(this.recruitPlate, 188, 58, ready ? Ink.cinnabar : "#8d8274");
+    }
     const head = `第 ${this.sim.waveNumber} / ${this.sim.waveTotal} 波`;
     if (this.sim.phase !== "playing") {
       this.waveLabel.text = head;
@@ -1036,6 +1187,38 @@ export class InkGuardView {
     }
     return image;
   }
+}
+
+function findNode(root: Laya.Node | null, name: string): Laya.Node | null {
+  if (!root) {
+    return null;
+  }
+  if (root.name === name) {
+    return root;
+  }
+  for (let i = 0; i < root.numChildren; i += 1) {
+    const found = findNode(root.getChildAt(i), name);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+function asSprite(node: Laya.Node | null): Laya.Sprite {
+  return node as Laya.Sprite;
+}
+
+function asBox(node: Laya.Node | null): Laya.Box {
+  return node as Laya.Box;
+}
+
+function asLabel(node: Laya.Node | null): Laya.Label {
+  return node as Laya.Label;
+}
+
+function asButton(node: Laya.Node | null): Laya.Button {
+  return node as Laya.Button;
 }
 
 function seed(): number {
