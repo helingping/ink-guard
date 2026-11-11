@@ -1,4 +1,8 @@
 {
   "name": "InkGuard",
-  "version": "1.0.0"
+  "displayName": "墨卫",
+  "version": "1.0.0",
+  "startupScene": "res://c0ffee00-0000-4000-8000-000000000001",
+  "includedScenes": [],
+  "alwaysIncluded": []
 }

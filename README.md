@@ -59,7 +59,7 @@ node web-preview/self-check.mjs
 
 调数值只改 `ink-guard/assets/resources/configs/` 里的 JSON。Creator 只能动态加载 `resources` 目录，所以配置放在这里，而不是 `assets/configs/`。Laya 工程里的 `laya-ink-guard/assets/resources/configs/` 是同一份拷贝；预览时若仓库里的原件读得到，会优先用原件。同步拷贝：`node laya-ink-guard/tools/sync-configs.mjs`。
 
-没有 LayaAir IDE 时，在仓库根目录起服务后打开 http://127.0.0.1:8765/laya-ink-guard/preview/ 。怎么在 Mac 上用 IDE 打开，写在 `laya-ink-guard/README.md`。
+没有 LayaAir IDE 时，在仓库根目录起服务后打开 http://127.0.0.1:8765/laya-ink-guard/preview/ 。用 IDE 时打开 `laya-ink-guard/`，启动场景 `assets/scenes/Main.ls` 上已经挂了 `Main`，直接点播放。细节写在 `laya-ink-guard/README.md`。
 
 ## 用 Cocos Creator 3.8 打开
 

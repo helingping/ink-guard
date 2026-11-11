@@ -1,0 +1,12 @@
+{
+  "_$ver": 1,
+  "_$id": "cell-6",
+  "_$type": "Image",
+  "name": "CellMarker",
+  "skin": "res://c0ffee00-0000-4000-8000-000000000105",
+  "width": 60,
+  "height": 60,
+  "anchorX": 0.5,
+  "anchorY": 0.5,
+  "mouseEnabled": false
+}

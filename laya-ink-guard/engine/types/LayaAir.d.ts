@@ -14,10 +14,13 @@ declare namespace Laya {
   class Node {
     name: string;
     parent: Node | null;
+    numChildren: number;
     mouseEnabled: boolean;
     destroy(destroyChild?: boolean): void;
     removeSelf(): Node;
     addChild<T extends Node>(node: T): T;
+    getChildAt(index: number): Node;
+    getChildByName(name: string): Node | null;
     on(type: string, caller: object, listener: Function, args?: unknown[]): void;
     off(type: string, caller: object, listener: Function): void;
   }
@@ -134,6 +137,12 @@ declare namespace Laya {
     onAwake(): void;
     onStart(): void;
   }
+
+  class Scene extends Sprite {
+    static open(url: string, closeOther?: boolean, param?: unknown): Promise<Scene>;
+  }
+
+  const PlayerConfig: { startupScene?: string };
 
   class Event {
     static readonly MOUSE_DOWN: string;

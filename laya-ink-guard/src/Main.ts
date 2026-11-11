@@ -5,33 +5,47 @@ import { InkGuardView } from "./view/InkGuardView";
 const { regClass } = Laya;
 
 /**
- * Startup script for LayaAir IDE. Attach it to any sprite in the startup scene,
- * or set the project entry to this file. The standalone preview sets
- * `window.__INK_GUARD_STANDALONE__` and calls `bootInkGuard` itself.
+ * Already attached to the root of assets/scenes/Main.ls, which is the startup scene.
+ * The id matches src/Main.ts.meta and the component on that scene.
+ * The standalone preview sets `window.__INK_GUARD_STANDALONE__` and calls `bootInkGuard` itself.
  * The screen is Laya.Box / Button / Label / Image / Sprite, not FairyGUI.
  */
-@regClass()
+@regClass("c0ffee00-0000-4000-8000-000000000002")
 export class Main extends Laya.Script {
   onAwake(): void {
-    bootInkGuard();
+    bootInkGuard(this.owner);
   }
+}
+
+/**
+ * Used when Play is set to the startup scene, and when the project is published.
+ * Opening the scene runs the Main component above. Current-scene Play skips this
+ * and runs that component directly.
+ */
+export async function main(): Promise<void> {
+  if (typeof window !== "undefined" && window.__INK_GUARD_STANDALONE__) {
+    return;
+  }
+  const startup = Laya.PlayerConfig.startupScene;
+  const url = startup && startup.length > 0 ? startup : "scenes/Main.ls";
+  await Laya.Scene.open(url, true);
 }
 
 let started = false;
 
-export function bootInkGuard(): void {
+export function bootInkGuard(sceneRoot?: Laya.Node): void {
   if (started) {
     return;
   }
   started = true;
   if (Laya.stage) {
     fitStage();
-    void launch();
+    void launch(sceneRoot);
     return;
   }
   void Laya.init(720, 1280).then(() => {
     fitStage();
-    return launch();
+    return launch(sceneRoot);
   }).catch((error: unknown) => {
     started = false;
     report(error);
@@ -49,7 +63,7 @@ function fitStage(): void {
   }
 }
 
-async function launch(): Promise<void> {
+async function launch(sceneRoot?: Laya.Node): Promise<void> {
   const loading = statusLabel("研墨中…");
   try {
     const fonts = await loadFonts();
@@ -57,7 +71,7 @@ async function launch(): Promise<void> {
     const art = await loadArt();
     loading.removeSelf();
     loading.destroy();
-    new InkGuardView(config, art, fonts).start();
+    new InkGuardView(config, art, fonts, sceneRoot ?? null).start();
   } catch (error) {
     loading.text = error instanceof Error ? error.message : "配置没有读出来";
     loading.color = "#b4332a";

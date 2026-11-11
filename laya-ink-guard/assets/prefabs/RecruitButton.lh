@@ -1,0 +1,29 @@
+{
+  "_$ver": 1,
+  "_$id": "recruit-2",
+  "_$type": "Box",
+  "name": "RecruitButton",
+  "width": 188,
+  "height": 58,
+  "mouseEnabled": true,
+  "_$child": [
+    {
+      "_$id": "button-3",
+      "_$type": "Button",
+      "name": "Button",
+      "skin": "res://c0ffee00-0000-4000-8000-000000000108",
+      "label": "招募",
+      "labelSize": 26,
+      "labelColors": "#f7f1e4,#ffffff,#f3e6c8",
+      "labelFont": "NotoSansCJKsc-Regular",
+      "labelBold": true,
+      "stateNum": 1,
+      "sizeGrid": "40,48,40,48",
+      "width": 188,
+      "height": 58,
+      "x": 0,
+      "y": 0,
+      "mouseEnabled": true
+    }
+  ]
+}

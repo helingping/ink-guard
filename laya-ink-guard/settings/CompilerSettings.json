@@ -1,5 +1,8 @@
 {
-  "entry": "src/Main.ts",
-  "startupScript": "src/Main.ts",
-  "encoding": "utf8"
+  "charset": "utf8",
+  "entries": [
+    "src/Main.ts"
+  ],
+  "mainScript": "src/Main.ts",
+  "keepUnusedComponentScripts": true
 }

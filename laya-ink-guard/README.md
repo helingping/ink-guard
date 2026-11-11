@@ -14,7 +14,9 @@ LayaAir IDE 自带的界面和 FairyGUI 都是可视化的组件编辑器：都�
 - 河道、格子、印章、字令图：`Laya.Image`
 - 墨路、射程圈、品级圈：`Laya.Sprite.graphics`
 
-界面在 `src/Main.ts` / `src/view/InkGuardView.ts` 里搭好。云端环境开不了 LayaAir 的图形 IDE，所以仓库里没有手摆的 `.ls` 场景。用 IDE 打开之后，可以把层级另存成场景；玩法仍由 `Main` 驱动。
+启动场景是 `assets/scenes/Main.ls`。根节点上已经挂了 `Main`，构建发布里的启动场景也指向它。宣纸面板、招募、倍速、格子、印章、字令样例是 `assets/prefabs/` 里的预制体，用的是 `Image`、`Button`、`Label`、`Box`、`Sprite`。字令、墨寇和弹道仍会在开局之后增减，所以它们还是运行时生成的。
+
+场景里的贴图放在 `assets/ui/`，每张图有自己的 Laya `.meta`。`assets/resources/` 里的图仍然是指向 Cocos 工程的符号链接，链接旁边已经有 Cocos 的 `.meta`，不能再写成 Laya 的。改格子坐标后可以重跑 `node tools/generate-laya-scene.mjs`。
 
 ## 没有 IDE 时先玩
 
@@ -44,9 +46,9 @@ npx --yes tsx tools/self-check.ts
 1. 从 https://layaair.com/#/engineDownload 安装 **LayaAir IDE 3.4.2**（或同代 3.4.x）。
 2. 启动器里打开 **`laya-ink-guard` 这个文件夹**。
 3. 等资源导入结束。IDE 可能会用自带的完整声明盖掉 `engine/types/LayaAir.d.ts`，这是正常的。
-4. 设计分辨率设成 **720 × 1280**，缩放 **fixedwidth**（固定宽），屏幕 **vertical**，背景 `#f3e6c8`。`settings/PlayerSettings.json` 里写了同一套；若 IDE 没读进去，在项目设置里手改一次。
-5. 新建或打开一个 2D 场景。在层级里放一个空的 Sprite，把脚本 **`Main`**（`src/Main.ts`）挂上去。把这个场景设为启动场景。脚本编译的入口也可以指到 `src/Main.ts`。
-6. 点播放。预览窗口用竖屏。
+4. 点播放。设计分辨率已经是 **720 × 1280**，缩放 **fixedwidth**，竖屏，背景 `#f3e6c8`。启动场景是 `assets/scenes/Main.ls`，`Main` 已经挂在根节点上。
+
+播放按钮如果停在「当前场景」而层级是空的，把旁边的下拉改成 **启动场景** 再点一次。平时直接点播放即可。预览窗口用竖屏。
 
 图片和字体通过符号链接指向 `ink-guard/assets/resources/` 里的原件（`textures`、`pose`、`fx`、`foes`、`fonts`）。macOS 上 git 会保留这些链接。如果 IDE 里图是空的，在本目录执行：
 
@@ -75,7 +77,6 @@ node tools/sync-configs.mjs
 
 ## 还没做的
 
-- IDE 里还没有保存好的 `.ls` 场景，界面是运行时用内置组件搭的
 - 攻击时会换成 `pose/` 里的帧，没有 Cocos 那套逐个 Widget 绑定
 - 没有微信小游戏或原生发布配置
 - 没有玩家对战、广告、账号

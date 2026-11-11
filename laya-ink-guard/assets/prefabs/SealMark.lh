@@ -1,0 +1,12 @@
+{
+  "_$ver": 1,
+  "_$id": "seal-7",
+  "_$type": "Image",
+  "name": "SealMark",
+  "skin": "res://c0ffee00-0000-4000-8000-000000000106",
+  "width": 108,
+  "height": 108,
+  "anchorX": 0.5,
+  "anchorY": 0.5,
+  "mouseEnabled": false
+}

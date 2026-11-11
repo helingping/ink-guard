@@ -1,0 +1,29 @@
+{
+  "_$ver": 1,
+  "_$id": "speed-4",
+  "_$type": "Box",
+  "name": "SpeedButton",
+  "width": 160,
+  "height": 52,
+  "mouseEnabled": true,
+  "_$child": [
+    {
+      "_$id": "button-5",
+      "_$type": "Button",
+      "name": "Button",
+      "skin": "res://c0ffee00-0000-4000-8000-000000000109",
+      "label": "常速",
+      "labelSize": 24,
+      "labelColors": "#f7f1e4,#ffffff,#f3e6c8",
+      "labelFont": "NotoSansCJKsc-Regular",
+      "labelBold": true,
+      "stateNum": 1,
+      "sizeGrid": "40,48,40,48",
+      "width": 160,
+      "height": 52,
+      "x": 0,
+      "y": 0,
+      "mouseEnabled": true
+    }
+  ]
+}
